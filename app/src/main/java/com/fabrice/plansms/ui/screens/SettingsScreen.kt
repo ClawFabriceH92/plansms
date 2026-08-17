@@ -3,7 +3,9 @@ package com.fabrice.plansms.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -30,10 +37,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fabrice.plansms.ui.PlanSmsViewModel
+import com.fabrice.plansms.ui.theme.Success
 import com.fabrice.plansms.util.AppLogger
 import com.fabrice.plansms.BuildConfig
 
@@ -49,6 +58,7 @@ fun SettingsScreen(
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showAutoReply by remember { mutableStateOf(false) }
+    var showCalendars by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var autoUpdate by remember { mutableStateOf(vm.isAutoUpdateEnabled()) }
 
@@ -74,6 +84,25 @@ fun SettingsScreen(
                 OutlinedButton(onClick = { showAutoReply = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Configurer l'auto-réponse")
                 }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
+                Text("Calendrier", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Vérifie que tes calendriers (dont Outlook) sont visibles par PlanSMS.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        vm.loadCalendars()
+                        showCalendars = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Voir les calendriers") }
             }
         }
 
@@ -217,6 +246,77 @@ fun SettingsScreen(
             onDismiss = { showImportDialog = false }
         )
     }
+
+    if (showCalendars) {
+        CalendarDiagnosticDialog(
+            vm = vm,
+            onDismiss = { showCalendars = false }
+        )
+    }
+}
+
+@Composable
+private fun CalendarDiagnosticDialog(vm: PlanSmsViewModel, onDismiss: () -> Unit) {
+    val state by vm.state.collectAsStateWithLifecycle()
+    val cals = state.calendars
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Calendriers visibles") },
+        text = {
+            when {
+                cals == null -> Text("Chargement…")
+                cals.isEmpty() -> Column {
+                    Text("⚠️ Aucun calendrier trouvé sur le téléphone.")
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Vérifie : 1) la permission Calendrier est accordée à PlanSMS (Réglages Android → Applications → PlanSMS), 2) un compte calendrier existe dans l'app Calendrier du téléphone.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                else -> {
+                    val hasOutlook = cals.any { it.accountType.contains("exchange", true) || it.displayName.contains("outlook", true) }
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.height(320.dp)) {
+                        items(cals, key = { it.displayName + it.accountName }) { c ->
+                            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                                Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        Modifier.size(14.dp).background(Color(c.color), RoundedCornerShape(4.dp))
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(c.displayName, style = MaterialTheme.typography.titleMedium)
+                                        Text(
+                                            "${c.accountName} · ${c.accountType}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Text(
+                                        if (c.visible) "visible" else "masqué",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = if (c.visible) Success else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        item {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                if (hasOutlook)
+                                    "✅ Calendrier Exchange/Outlook détecté — tes RDV sont lisibles."
+                                else
+                                    "ℹ️ Aucun calendrier Exchange/Outlook détecté. Si Outlook n'apparaît pas, active dans l'app Outlook : Paramètres → Compte → Synchroniser les calendriers (avec le calendrier système).",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } }
+    )
 }
 
 @Composable

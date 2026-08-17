@@ -14,8 +14,52 @@ data class CalendarEvent(
     val attendees: List<String> // emails des participants
 )
 
+/** Informations sur un calendrier (diagnostic). */
+data class CalendarInfo(
+    val displayName: String,
+    val accountName: String,
+    val accountType: String,
+    val color: Int,
+    val visible: Boolean
+)
+
 /** Lecture du calendrier + mapping participants → répertoire. */
 object CalendarRepository {
+
+    /** Liste les calendriers visibles par l'app (diagnostic synchro Outlook). */
+    fun readCalendars(context: Context): List<CalendarInfo> {
+        val out = mutableListOf<CalendarInfo>()
+        val projection = arrayOf(
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Calendars.ACCOUNT_NAME,
+            CalendarContract.Calendars.ACCOUNT_TYPE,
+            CalendarContract.Calendars.CALENDAR_COLOR,
+            CalendarContract.Calendars.VISIBLE
+        )
+        val cursor = try {
+            context.contentResolver.query(
+                CalendarContract.Calendars.CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} ASC"
+            )
+        } catch (e: Exception) { null }
+        cursor?.use { c ->
+            while (c.moveToNext()) {
+                out.add(
+                    CalendarInfo(
+                        displayName = c.getString(0) ?: "",
+                        accountName = c.getString(1) ?: "",
+                        accountType = c.getString(2) ?: "",
+                        color = c.getInt(3),
+                        visible = c.getInt(4) == 1
+                    )
+                )
+            }
+        }
+        return out
+    }
 
     fun readUpcomingEvents(context: Context, maxDays: Int = 30, limit: Int = 30): List<CalendarEvent> {
         val out = mutableListOf<CalendarEvent>()

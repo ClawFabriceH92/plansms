@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabrice.plansms.data.AutoReplyRule
+import com.fabrice.plansms.data.CalendarInfo
 import com.fabrice.plansms.data.ContactGroup
 import com.fabrice.plansms.data.GroupMember
 import com.fabrice.plansms.data.ScheduledMessage
@@ -27,6 +28,8 @@ data class PlanSmsUiState(
     val groups: List<ContactGroup> = emptyList(),
     val members: Map<Long, List<GroupMember>> = emptyMap(),
     val autoReply: AutoReplyRule? = null,
+    val calendars: List<CalendarInfo>? = null,  // null = pas encore chargé, vide = aucun
+    val calendarsLoaded: Boolean = false,
     val locked: Boolean = false,
     val pinEnabled: Boolean = false,
     val exportText: String = "",
@@ -107,6 +110,16 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Auto-réponse ---
     fun saveAutoReply(rule: AutoReplyRule) = viewModelScope.launch { repo.saveAutoReply(rule) }
+
+    // --- Calendrier (diagnostic) ---
+    fun loadCalendars() {
+        viewModelScope.launch {
+            val list = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.fabrice.plansms.data.CalendarRepository.readCalendars(getApplication())
+            }
+            _state.value = _state.value.copy(calendars = list, calendarsLoaded = true)
+        }
+    }
 
     // --- PIN ---
     fun enablePin(pin: String) {
