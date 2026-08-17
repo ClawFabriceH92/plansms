@@ -30,6 +30,7 @@ data class PlanSmsUiState(
     val autoReply: AutoReplyRule? = null,
     val calendars: List<CalendarInfo>? = null,  // null = pas encore chargé, vide = aucun
     val calendarsLoaded: Boolean = false,
+    val calendarCounts: Map<Long, Int> = emptyMap(),
     val locked: Boolean = false,
     val pinEnabled: Boolean = false,
     val exportText: String = "",
@@ -115,10 +116,14 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     // --- Calendrier (diagnostic) ---
     fun loadCalendars() {
         viewModelScope.launch {
-            val list = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.fabrice.plansms.data.CalendarRepository.readCalendars(getApplication())
+            val (list, counts) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val cals = com.fabrice.plansms.data.CalendarRepository.readCalendars(getApplication())
+                val cnts = com.fabrice.plansms.data.CalendarRepository
+                    .eventCountsByCalendar(getApplication(), 30)
+                    .associate { it.first.id to it.second }
+                cals to cnts
             }
-            _state.value = _state.value.copy(calendars = list, calendarsLoaded = true)
+            _state.value = _state.value.copy(calendars = list, calendarsLoaded = true, calendarCounts = counts)
         }
     }
 

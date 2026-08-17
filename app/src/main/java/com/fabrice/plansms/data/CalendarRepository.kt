@@ -66,50 +66,51 @@ object CalendarRepository {
     }
 
     /**
-     * Lecture des événements à venir, calendrier par calendrier (contourne le filtre
-     * de visibilité implicite : les événements des calendriers non sélectionnés
-     * ne remontent pas avec une requête globale).
+     * Lecture des événements à venir via la table INSTANCES (occurrences entre deux dates).
+     * Plus fiable que Events pour certains providers — méthode recommandée par Android.
      */
     fun readUpcomingEvents(context: Context, maxDays: Int = 30, limit: Int = 50): List<CalendarEvent> {
         val cals = readCalendars(context)
-        val out = mutableListOf<CalendarEvent>()
+        val calNames = cals.associate { it.id to it.displayName }
         val now = System.currentTimeMillis()
         val end = now + maxDays * 86_400_000L
+        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath(now.toString())
+            .appendPath(end.toString())
+            .build()
         val projection = arrayOf(
-            CalendarContract.Events._ID,
-            CalendarContract.Events.TITLE,
-            CalendarContract.Events.DTSTART,
-            CalendarContract.Events.DTEND,
-            CalendarContract.Events.EVENT_LOCATION
+            CalendarContract.Instances._ID,
+            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.END,
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.CALENDAR_ID
         )
-        for (cal in cals) {
-            val cursor = try {
-                context.contentResolver.query(
-                    CalendarContract.Events.CONTENT_URI,
-                    projection,
-                    "${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} < ? AND ${CalendarContract.Events.CALENDAR_ID} = ?",
-                    arrayOf(now.toString(), end.toString(), cal.id.toString()),
-                    "${CalendarContract.Events.DTSTART} ASC"
-                )
-            } catch (e: Exception) { null }
-            cursor?.use { c ->
-                while (c.moveToNext() && out.size < limit) {
-                    val id = c.getLong(0)
-                    out.add(
-                        CalendarEvent(
-                            id = id,
-                            title = c.getString(1) ?: "",
-                            start = c.getLong(2),
-                            end = c.getLong(3),
-                            location = c.getString(4) ?: "",
-                            attendees = readAttendees(context, id),
-                            calendarName = cal.displayName
-                        )
+        val out = mutableListOf<CalendarEvent>()
+        val cursor = try {
+            context.contentResolver.query(
+                uri, projection, null, null, "${CalendarContract.Instances.BEGIN} ASC"
+            )
+        } catch (e: Exception) { null }
+        cursor?.use { c ->
+            while (c.moveToNext() && out.size < limit) {
+                val eventId = c.getLong(1)
+                val calId = c.getLong(6)
+                out.add(
+                    CalendarEvent(
+                        id = eventId,
+                        title = c.getString(2) ?: "",
+                        start = c.getLong(3),
+                        end = c.getLong(4),
+                        location = c.getString(5) ?: "",
+                        attendees = readAttendees(context, eventId),
+                        calendarName = calNames[calId] ?: ""
                     )
-                }
+                )
             }
         }
-        return out.sortedBy { it.start }
+        return out
     }
 
     /** Décompte d'événements par calendrier (diagnostic : où sont mes RDV ?). */
@@ -117,15 +118,19 @@ object CalendarRepository {
         val cals = readCalendars(context)
         val now = System.currentTimeMillis()
         val end = now + maxDays * 86_400_000L
+        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath(now.toString())
+            .appendPath(end.toString())
+            .build()
         val out = mutableListOf<Pair<CalendarInfo, Int>>()
         for (cal in cals) {
             var count = 0
             val cursor = try {
                 context.contentResolver.query(
-                    CalendarContract.Events.CONTENT_URI,
-                    arrayOf(CalendarContract.Events._ID),
-                    "${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} < ? AND ${CalendarContract.Events.CALENDAR_ID} = ?",
-                    arrayOf(now.toString(), end.toString(), cal.id.toString()),
+                    uri,
+                    arrayOf(CalendarContract.Instances._ID),
+                    "${CalendarContract.Instances.CALENDAR_ID} = ?",
+                    arrayOf(cal.id.toString()),
                     null
                 )
             } catch (e: Exception) { null }

@@ -294,7 +294,7 @@ private fun CalendarDiagnosticDialog(vm: PlanSmsViewModel, onDismiss: () -> Unit
                     )
                 }
                 else -> {
-                    val hasOutlook = cals.any { it.accountType.contains("exchange", true) || it.displayName.contains("outlook", true) }
+                    val totalEvents = state.calendarCounts.values.sum()
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.height(320.dp)) {
                         items(cals, key = { it.displayName + it.accountName }) { c ->
                             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -312,21 +312,28 @@ private fun CalendarDiagnosticDialog(vm: PlanSmsViewModel, onDismiss: () -> Unit
                                             maxLines = 1
                                         )
                                     }
-                                    Text(
-                                        if (c.visible) "visible" else "masqué",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = if (c.visible) Success else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            "${state.calendarCounts[c.id] ?: 0} évén.\n(30 j)",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = if ((state.calendarCounts[c.id] ?: 0) > 0) Success else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            if (c.visible) "visible" else "masqué",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = if (c.visible) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                                        )
+                                    }
                                 }
                             }
                         }
                         item {
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                if (hasOutlook)
-                                    "✅ Calendrier Exchange/Outlook détecté — tes RDV sont lisibles."
+                                if (totalEvents > 0)
+                                    "✅ $totalEvents événement(s) lisibles sur 30 jours — la lecture fonctionne."
                                 else
-                                    "ℹ️ Aucun calendrier Exchange/Outlook détecté. Si Outlook n'apparaît pas, active dans l'app Outlook : Paramètres → Compte → Synchroniser les calendriers (avec le calendrier système).",
+                                    "⚠️ 0 événement lisible : soit tes RDV ne sont pas synchronisés dans le calendrier système (Outlook → Paramètres → Compte → Synchroniser les calendriers), soit ils sont dans un calendrier masqué (app Calendrier → coche-le).",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.secondary
                             )
