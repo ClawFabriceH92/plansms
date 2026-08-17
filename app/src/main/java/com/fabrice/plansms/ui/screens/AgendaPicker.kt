@@ -54,6 +54,7 @@ fun AgendaPickerDialog(
     var periodDays by remember { mutableStateOf(30) }
     var events by remember { mutableStateOf<List<CalendarEvent>?>(null) }
     var mapped by remember { mutableStateOf<Map<Long, Pair<String, String>>>(emptyMap()) }
+    var counts by remember { mutableStateOf<List<Pair<com.fabrice.plansms.data.CalendarInfo, Int>>>(emptyList()) }
 
     LaunchedEffect(periodDays) {
         val evts = withContext(Dispatchers.IO) {
@@ -68,6 +69,9 @@ fun AgendaPickerDialog(
         }
         events = evts
         mapped = map
+        counts = withContext(Dispatchers.IO) {
+            CalendarRepository.eventCountsByCalendar(context, periodDays)
+        }
     }
 
     AlertDialog(
@@ -95,10 +99,20 @@ fun AgendaPickerDialog(
                     evts.isEmpty() -> Column {
                         Text("⚠️ Aucun événement trouvé dans les $periodDays prochains jours.", color = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.height(8.dp))
+                        Text("Détail par calendrier (pour comprendre) :", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.height(4.dp))
+                        counts.forEach { (cal, n) ->
+                            Text(
+                                "• ${cal.displayName} (${cal.accountType}) : $n événement(s) — ${if (cal.visible) "visible" else "MASQUÉ dans l'app Calendrier"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (cal.visible) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            "Si ton rendez-vous est dans Outlook mais n'apparaît pas ici, le calendrier Outlook n'est pas synchronisé avec le calendrier système. " +
-                            "Active dans l'app Outlook : Paramètres → Compte → Synchroniser les calendriers (avec le calendrier système). " +
-                            "Tu peux aussi vérifier les calendriers dans Réglages → Voir les calendriers.",
+                            "Si ton rendez-vous est dans Outlook mais qu'aucun événement n'apparaît dans son calendrier : la synchro Outlook → calendrier système n'est pas active. " +
+                            "Active dans l'app Outlook : Paramètres → Compte → Synchroniser les calendriers. " +
+                            "Si le calendrier est « MASQUÉ » : ouvre l'app Calendrier du téléphone et coche-le.",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }

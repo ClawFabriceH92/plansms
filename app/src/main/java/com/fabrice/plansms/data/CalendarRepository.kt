@@ -65,49 +65,72 @@ object CalendarRepository {
         return out
     }
 
+    /**
+     * Lecture des événements à venir, calendrier par calendrier (contourne le filtre
+     * de visibilité implicite : les événements des calendriers non sélectionnés
+     * ne remontent pas avec une requête globale).
+     */
     fun readUpcomingEvents(context: Context, maxDays: Int = 30, limit: Int = 50): List<CalendarEvent> {
+        val cals = readCalendars(context)
         val out = mutableListOf<CalendarEvent>()
         val now = System.currentTimeMillis()
         val end = now + maxDays * 86_400_000L
-        // Noms des calendriers pour afficher la source de chaque événement
-        val calNames = readCalendars(context).associate { it.id to it.displayName }
         val projection = arrayOf(
             CalendarContract.Events._ID,
             CalendarContract.Events.TITLE,
             CalendarContract.Events.DTSTART,
             CalendarContract.Events.DTEND,
-            CalendarContract.Events.EVENT_LOCATION,
-            CalendarContract.Events.CALENDAR_ID
+            CalendarContract.Events.EVENT_LOCATION
         )
-        val cursor = try {
-            context.contentResolver.query(
-                CalendarContract.Events.CONTENT_URI,
-                projection,
-                "${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} < ?",
-                arrayOf(now.toString(), end.toString()),
-                "${CalendarContract.Events.DTSTART} ASC"
-            )
-        } catch (e: Exception) { null }
-        cursor?.use { c ->
-            while (c.moveToNext() && out.size < limit) {
-                val id = c.getLong(0)
-                val title = c.getString(1) ?: ""
-                val start = c.getLong(2)
-                val endD = c.getLong(3)
-                val loc = c.getString(4) ?: ""
-                val calId = c.getLong(5)
-                out.add(
-                    CalendarEvent(
-                        id = id,
-                        title = title,
-                        start = start,
-                        end = endD,
-                        location = loc,
-                        attendees = readAttendees(context, id),
-                        calendarName = calNames[calId] ?: ""
-                    )
+        for (cal in cals) {
+            val cursor = try {
+                context.contentResolver.query(
+                    CalendarContract.Events.CONTENT_URI,
+                    projection,
+                    "${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} < ? AND ${CalendarContract.Events.CALENDAR_ID} = ?",
+                    arrayOf(now.toString(), end.toString(), cal.id.toString()),
+                    "${CalendarContract.Events.DTSTART} ASC"
                 )
+            } catch (e: Exception) { null }
+            cursor?.use { c ->
+                while (c.moveToNext() && out.size < limit) {
+                    val id = c.getLong(0)
+                    out.add(
+                        CalendarEvent(
+                            id = id,
+                            title = c.getString(1) ?: "",
+                            start = c.getLong(2),
+                            end = c.getLong(3),
+                            location = c.getString(4) ?: "",
+                            attendees = readAttendees(context, id),
+                            calendarName = cal.displayName
+                        )
+                    )
+                }
             }
+        }
+        return out.sortedBy { it.start }
+    }
+
+    /** Décompte d'événements par calendrier (diagnostic : où sont mes RDV ?). */
+    fun eventCountsByCalendar(context: Context, maxDays: Int): List<Pair<CalendarInfo, Int>> {
+        val cals = readCalendars(context)
+        val now = System.currentTimeMillis()
+        val end = now + maxDays * 86_400_000L
+        val out = mutableListOf<Pair<CalendarInfo, Int>>()
+        for (cal in cals) {
+            var count = 0
+            val cursor = try {
+                context.contentResolver.query(
+                    CalendarContract.Events.CONTENT_URI,
+                    arrayOf(CalendarContract.Events._ID),
+                    "${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} < ? AND ${CalendarContract.Events.CALENDAR_ID} = ?",
+                    arrayOf(now.toString(), end.toString(), cal.id.toString()),
+                    null
+                )
+            } catch (e: Exception) { null }
+            cursor?.use { c -> count = c.count }
+            out.add(cal to count)
         }
         return out
     }
