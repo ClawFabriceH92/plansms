@@ -186,13 +186,26 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun downloadUpdate() {
-        val info = runCatching {
-            UpdateChecker.check(getApplication(), UpdateChecker.versionName(getApplication()))
-        }.getOrNull()
-        if (info != null) {
-            val ok = UpdateDownloader.start(getApplication(), info.apkUrl)
-            _state.value = if (ok) _state.value.copy(updateInfo = "telechargement", updateError = "")
-            else _state.value.copy(updateInfo = "erreur", updateError = "Permission d'installation refusée — voir la notification")
+        viewModelScope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                UpdateChecker.checkResult(getApplication(), UpdateChecker.versionName(getApplication()))
+            }
+            when (result) {
+                is UpdateChecker.CheckResult.Update -> {
+                    val ok = UpdateDownloader.start(getApplication(), result.info.apkUrl)
+                    _state.value = if (ok) {
+                        _state.value.copy(updateInfo = "telechargement", updateError = "")
+                    } else {
+                        _state.value.copy(updateInfo = "erreur", updateError = "Permission d'installation refusée — voir la notification")
+                    }
+                }
+                is UpdateChecker.CheckResult.Current -> {
+                    _state.value = _state.value.copy(updateInfo = "a_jour", updateVersion = "", updateError = "")
+                }
+                is UpdateChecker.CheckResult.Error -> {
+                    _state.value = _state.value.copy(updateInfo = "erreur", updateVersion = "", updateError = result.message)
+                }
+            }
         }
     }
 
