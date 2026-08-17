@@ -1,5 +1,7 @@
 package com.fabrice.plansms.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,6 +69,16 @@ fun EditScreen(
     var selectedGroupId by remember { mutableStateOf(editing?.groupId ?: 0L) }
     var error by remember { mutableStateOf("") }
     var showAgenda by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val pickContact = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { uri ->
+        if (uri != null) {
+            val found = com.fabrice.plansms.data.ContactsHelper.contactPhoneFromUri(context, uri)
+            phone = found?.first ?: ""
+            useGroup = false
+            if (found?.first.isNullOrBlank()) error = "Ce contact n'a pas de numéro de téléphone"
+        }
+    }
 
     // Boutons templates rapides
     var showTemplatePicker by remember { mutableStateOf(false) }
@@ -130,6 +143,12 @@ fun EditScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            OutlinedButton(
+                onClick = { pickContact.launch(null) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("👤 Choisir un contact")
+            }
         }
 
         if (state.templates.isNotEmpty()) {
