@@ -65,6 +65,7 @@ fun EditScreen(
     var useGroup by remember { mutableStateOf(editing?.groupId ?: 0L > 0) }
     var selectedGroupId by remember { mutableStateOf(editing?.groupId ?: 0L) }
     var error by remember { mutableStateOf("") }
+    var showAgenda by remember { mutableStateOf(false) }
 
     // Boutons templates rapides
     var showTemplatePicker by remember { mutableStateOf(false) }
@@ -93,6 +94,12 @@ fun EditScreen(
         }
 
         // Destinataire : numéro ou groupe
+        OutlinedButton(
+            onClick = { showAgenda = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("📅 Choisir un rendez-vous (calendrier)")
+        }
         if (state.groups.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Destinataire :", style = MaterialTheme.typography.labelLarge)
@@ -268,6 +275,30 @@ fun EditScreen(
             OutlinedButton(onClick = onClose) { Text("Annuler") }
         }
         Spacer(Modifier.height(20.dp))
+    }
+
+    if (showAgenda) {
+        AgendaPickerDialog(
+            onSelect = { sel ->
+                val cal = Calendar.getInstance().apply { timeInMillis = sel.event.start }
+                phone = sel.phone
+                if (text.isBlank()) {
+                    text = if (sel.contactName.isNotBlank()) {
+                        "Bonjour ${sel.contactName.split(" ").first()}, confirmation de notre rendez-vous du {{date}} à {{heure}}."
+                    } else {
+                        "Bonjour, confirmation de notre rendez-vous du {{date}} à {{heure}}."
+                    }
+                }
+                date = "%02d/%02d/%04d".format(
+                    cal.get(Calendar.DAY_OF_MONTH), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR)
+                )
+                hour = cal.get(Calendar.HOUR_OF_DAY).toString()
+                minute = cal.get(Calendar.MINUTE).toString()
+                useGroup = false
+                showAgenda = false
+            },
+            onDismiss = { showAgenda = false }
+        )
     }
 }
 

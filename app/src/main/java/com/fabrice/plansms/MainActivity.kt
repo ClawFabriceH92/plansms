@@ -45,7 +45,9 @@ class MainActivity : ComponentActivity() {
         val needed = mutableListOf(
             Manifest.permission.SEND_SMS,
             Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.RECEIVE_BOOT_COMPLETED
+            Manifest.permission.RECEIVE_BOOT_COMPLETED,
+            Manifest.permission.READ_CALENDAR,
+            Manifest.permission.READ_CONTACTS
         )
         if (Build.VERSION.SDK_INT >= 33) needed.add(Manifest.permission.POST_NOTIFICATIONS)
         val missing = needed.filter {
