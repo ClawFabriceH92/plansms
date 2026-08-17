@@ -11,11 +11,13 @@ data class CalendarEvent(
     val start: Long,
     val end: Long,
     val location: String,
-    val attendees: List<String> // emails des participants
+    val attendees: List<String>, // emails des participants
+    val calendarName: String = ""
 )
 
 /** Informations sur un calendrier (diagnostic). */
 data class CalendarInfo(
+    val id: Long,
     val displayName: String,
     val accountName: String,
     val accountType: String,
@@ -30,6 +32,7 @@ object CalendarRepository {
     fun readCalendars(context: Context): List<CalendarInfo> {
         val out = mutableListOf<CalendarInfo>()
         val projection = arrayOf(
+            CalendarContract.Calendars._ID,
             CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
             CalendarContract.Calendars.ACCOUNT_NAME,
             CalendarContract.Calendars.ACCOUNT_TYPE,
@@ -49,11 +52,12 @@ object CalendarRepository {
             while (c.moveToNext()) {
                 out.add(
                     CalendarInfo(
-                        displayName = c.getString(0) ?: "",
-                        accountName = c.getString(1) ?: "",
-                        accountType = c.getString(2) ?: "",
-                        color = c.getInt(3),
-                        visible = c.getInt(4) == 1
+                        id = c.getLong(0),
+                        displayName = c.getString(1) ?: "",
+                        accountName = c.getString(2) ?: "",
+                        accountType = c.getString(3) ?: "",
+                        color = c.getInt(4),
+                        visible = c.getInt(5) == 1
                     )
                 )
             }
@@ -61,16 +65,19 @@ object CalendarRepository {
         return out
     }
 
-    fun readUpcomingEvents(context: Context, maxDays: Int = 30, limit: Int = 30): List<CalendarEvent> {
+    fun readUpcomingEvents(context: Context, maxDays: Int = 30, limit: Int = 50): List<CalendarEvent> {
         val out = mutableListOf<CalendarEvent>()
         val now = System.currentTimeMillis()
         val end = now + maxDays * 86_400_000L
+        // Noms des calendriers pour afficher la source de chaque événement
+        val calNames = readCalendars(context).associate { it.id to it.displayName }
         val projection = arrayOf(
             CalendarContract.Events._ID,
             CalendarContract.Events.TITLE,
             CalendarContract.Events.DTSTART,
             CalendarContract.Events.DTEND,
-            CalendarContract.Events.EVENT_LOCATION
+            CalendarContract.Events.EVENT_LOCATION,
+            CalendarContract.Events.CALENDAR_ID
         )
         val cursor = try {
             context.contentResolver.query(
@@ -88,7 +95,18 @@ object CalendarRepository {
                 val start = c.getLong(2)
                 val endD = c.getLong(3)
                 val loc = c.getString(4) ?: ""
-                out.add(CalendarEvent(id, title, start, endD, loc, readAttendees(context, id)))
+                val calId = c.getLong(5)
+                out.add(
+                    CalendarEvent(
+                        id = id,
+                        title = title,
+                        start = start,
+                        end = endD,
+                        location = loc,
+                        attendees = readAttendees(context, id),
+                        calendarName = calNames[calId] ?: ""
+                    )
+                )
             }
         }
         return out
