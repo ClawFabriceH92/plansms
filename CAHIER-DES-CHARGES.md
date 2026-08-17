@@ -69,11 +69,15 @@ Développer une application Android de **programmation de messages SMS** (envoi 
 ### 3.2 IMPORTANT (v2) — SHOULD
 
 **F6. Auto-réponse**
-- Activation globale + **règles** : par expéditeur (liste blanche), par mot-clé dans le message reçu
-- Réponse unique par conversation (anti-boucle), délai configurable (ex. 2 min)
+- Activation globale + **règles** : **répondre à TOUS les correspondants SAUF liste noire** (ou UNIQUEMENT liste blanche)
+- Texte de réponse configurable (+ variables {{prenom}}), délai avant réponse, anti-boucle (numéros courts/services ignorés, 1 réponse par expéditeur toutes les X min)
 - Option "ne répondre que si téléphone inoccupé" (pas en appel)
-- **Exceptions** : numéros à ne jamais répondre
 - Nécessite le rôle **app SMS par défaut** OU service d'accessibilité (choix documenté + onboarding)
+
+**F21. Groupes de contacts**
+- Création de groupes : clients, famille, amis, travail…
+- Sélection d'un groupe comme destinataire d'un message programmé → envoi à tous les membres
+- Gestion dans un onglet dédié
 
 **F7. Envoi groupé (bulk)**
 - Sélection multiple de contacts

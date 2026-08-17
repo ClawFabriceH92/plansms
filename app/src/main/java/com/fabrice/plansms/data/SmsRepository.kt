@@ -12,10 +12,16 @@ class SmsRepository(private val context: Context) {
     private val msgDao = db.scheduledMessageDao()
     private val tmplDao = db.templateDao()
     private val logDao = db.sendLogDao()
+    private val groupDao = db.contactGroupDao()
+    private val memberDao = db.groupMemberDao()
+    private val autoReplyDao = db.autoReplyRuleDao()
 
     fun observeMessages(): Flow<List<ScheduledMessage>> = msgDao.observeAll()
     fun observeTemplates(): Flow<List<Template>> = tmplDao.observeAll()
     fun observeLogs(): Flow<List<SendLog>> = logDao.observeRecent()
+    fun observeGroups(): Flow<List<ContactGroup>> = groupDao.observeAll()
+    fun observeMembers(groupId: Long): Flow<List<GroupMember>> = memberDao.observeMembers(groupId)
+    fun observeAutoReply(): Flow<AutoReplyRule?> = autoReplyDao.observe()
 
     suspend fun addMessage(msg: ScheduledMessage): Long {
         val id = msgDao.insert(msg)
@@ -56,6 +62,14 @@ class SmsRepository(private val context: Context) {
     suspend fun deleteTemplate(t: Template) = tmplDao.delete(t)
 
     suspend fun clearLogs() = logDao.clear()
+
+    suspend fun addGroup(name: String): Long = groupDao.insert(ContactGroup(name = name))
+    suspend fun deleteGroup(id: Long) = groupDao.deleteById(id)
+    suspend fun addMembers(groupId: Long, members: List<GroupMember>) = memberDao.insertAll(members)
+    suspend fun removeMember(groupId: Long, phone: String) = memberDao.delete(groupId, phone)
+    suspend fun getMembers(groupId: Long): List<GroupMember> = memberDao.getMembers(groupId)
+
+    suspend fun saveAutoReply(rule: AutoReplyRule) = autoReplyDao.upsert(rule)
 
     suspend fun rescheduleAll() {
         SmsScheduler.rescheduleAll(context, msgDao.getScheduled())

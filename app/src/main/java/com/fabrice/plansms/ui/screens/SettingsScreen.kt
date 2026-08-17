@@ -38,18 +38,75 @@ import com.fabrice.plansms.util.AppLogger
 import com.fabrice.plansms.BuildConfig
 
 @Composable
-fun SettingsScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    vm: PlanSmsViewModel,
+    onShowHelp: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showPinDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var showAutoReply by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
+    var autoUpdate by remember { mutableStateOf(vm.isAutoUpdateEnabled()) }
+
+    if (showAutoReply) {
+        AutoReplyScreen(vm, onBack = { showAutoReply = false })
+        return
+    }
 
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
+                Text("Auto-réponse", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (state.autoReply?.enabled == true) "Activée — ${if (state.autoReply?.mode == "ONLY") "uniquement" else "tous sauf"} ${state.autoReply?.numbers ?: ""}"
+                    else "Répond automatiquement aux SMS reçus (tous sauf… / uniquement…)",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { showAutoReply = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Configurer l'auto-réponse")
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
+                Text("Mise à jour", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Vérifier les mises à jour au lancement", style = MaterialTheme.typography.titleMedium)
+                        Text("Version actuelle : ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Switch(checked = autoUpdate, onCheckedChange = {
+                        autoUpdate = it
+                        vm.setAutoUpdateEnabled(it)
+                    })
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = { vm.checkForUpdate() }, modifier = Modifier.weight(1f)) { Text("Vérifier") }
+                    if (state.updateInfo == "dispo") {
+                        Button(onClick = { vm.downloadUpdate() }, modifier = Modifier.weight(1f)) { Text("Télécharger v${state.updateVersion}") }
+                    }
+                }
+                when (state.updateInfo) {
+                    "a_jour" -> Text("✅ À jour", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+                    "dispo" -> Text("Version ${state.updateVersion} disponible", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+                    "telechargement" -> Text("Téléchargement en cours…", style = MaterialTheme.typography.bodyMedium)
+                    else -> {}
+                }
+            }
+        }
+
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(14.dp)) {
                 Text("Sécurité", style = MaterialTheme.typography.titleLarge)
@@ -80,6 +137,16 @@ fun SettingsScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
                         showExportDialog = true
                     }, modifier = Modifier.weight(1f)) { Text("Exporter JSON") }
                     OutlinedButton(onClick = { showImportDialog = true }, modifier = Modifier.weight(1f)) { Text("Importer") }
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
+                Text("Aide", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onShowHelp, modifier = Modifier.fillMaxWidth()) {
+                    Text("Exemples & tutoriel")
                 }
             }
         }

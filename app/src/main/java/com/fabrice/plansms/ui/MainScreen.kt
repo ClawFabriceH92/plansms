@@ -2,9 +2,10 @@ package com.fabrice.plansms.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,6 +29,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fabrice.plansms.ui.screens.EditScreen
+import com.fabrice.plansms.ui.screens.GroupsScreen
+import com.fabrice.plansms.ui.screens.HelpScreen
 import com.fabrice.plansms.ui.screens.HomeScreen
 import com.fabrice.plansms.ui.screens.JournalScreen
 import com.fabrice.plansms.ui.screens.PinScreen
@@ -50,18 +53,26 @@ fun MainScreen(vm: PlanSmsViewModel) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var editingId by rememberSaveable { mutableLongStateOf(-1L) }
     var creating by rememberSaveable { mutableStateOf(false) }
+    var showHelp by rememberSaveable { mutableStateOf(false) }
 
     val tabs = listOf(
         Tab("Accueil", Icons.Filled.Home),
+        Tab("Groupes", Icons.Filled.Person),
         Tab("Modèles", Icons.Filled.Email),
-        Tab("Journal", Icons.Filled.List),
+        Tab("Journal", Icons.AutoMirrored.Filled.List),
         Tab("Réglages", Icons.Filled.Settings)
     )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (creating || editingId >= 0) "Nouveau message" else tabs[selectedTab].label) },
+                title = { Text(
+                    when {
+                        creating || editingId >= 0 -> "Nouveau message"
+                        showHelp -> "Aide"
+                        else -> tabs[selectedTab].label
+                    }
+                ) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = NightBlue,
                     titleContentColor = Color.White
@@ -69,7 +80,7 @@ fun MainScreen(vm: PlanSmsViewModel) {
             )
         },
         bottomBar = {
-            if (!creating && editingId < 0) {
+            if (!creating && editingId < 0 && !showHelp) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     tabs.forEachIndexed { i, tab ->
                         NavigationBarItem(
@@ -95,15 +106,25 @@ fun MainScreen(vm: PlanSmsViewModel) {
                 onClose = { creating = false; editingId = -1 },
                 modifier = Modifier.padding(padding)
             )
+            showHelp -> HelpScreen(
+                vm = vm,
+                onClose = { showHelp = false },
+                modifier = Modifier.padding(padding)
+            )
             selectedTab == 0 -> HomeScreen(
                 vm = vm,
                 onNew = { creating = true },
                 onEdit = { id -> editingId = id },
                 modifier = Modifier.padding(padding)
             )
-            selectedTab == 1 -> TemplatesScreen(vm, Modifier.padding(padding))
-            selectedTab == 2 -> JournalScreen(vm, Modifier.padding(padding))
-            else -> SettingsScreen(vm, Modifier.padding(padding))
+            selectedTab == 1 -> GroupsScreen(vm, Modifier.padding(padding))
+            selectedTab == 2 -> TemplatesScreen(vm, Modifier.padding(padding))
+            selectedTab == 3 -> JournalScreen(vm, Modifier.padding(padding))
+            else -> SettingsScreen(
+                vm = vm,
+                onShowHelp = { showHelp = true },
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 }

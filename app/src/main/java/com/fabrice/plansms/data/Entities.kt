@@ -3,6 +3,12 @@ package com.fabrice.plansms.data
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/** Canal d'envoi d'un message programmé. */
+enum class Channel {
+    SMS,        // envoi automatique via SmsManager
+    WHATSAPP    // semi-auto : notification → ouverture WhatsApp pré-remplie (envoi manuel final)
+}
+
 /** Types de répétition d'un message programmé. */
 enum class RepeatRule {
     ONCE,        // one-shot
@@ -42,7 +48,9 @@ data class ScheduledMessage(
     val status: SmsStatus = SmsStatus.SCHEDULED,
     val createdAt: Long = System.currentTimeMillis(),
     val lastError: String = "",
-    val sensitive: Boolean = false // réservé v0.2 (chiffrement)
+    val sensitive: Boolean = false, // réservé v0.2 (chiffrement)
+    val channel: Channel = Channel.SMS, // v0.2 : canal d'envoi
+    val groupId: Long = 0          // v0.2 : 0 = numéro direct, sinon groupe de contacts
 )
 
 /** Modèle de message réutilisable. */
@@ -61,7 +69,35 @@ data class SendLog(
     val scheduledId: Long,
     val phone: String,
     val textPreview: String,
-    val status: String,            // SENT / FAILED / RATTRAPAGE
+    val status: String,            // SENT / FAILED / RATTRAPAGE / WHATSAPP
     val error: String = "",
     val sentAt: Long = System.currentTimeMillis()
+)
+
+/** Groupe de contacts (clients, famille…). */
+@Entity(tableName = "contact_groups")
+data class ContactGroup(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/** Membre d'un groupe. */
+@Entity(tableName = "group_members", primaryKeys = ["groupId", "phone"])
+data class GroupMember(
+    val groupId: Long,
+    val phone: String,
+    val name: String = ""
+)
+
+/** Règle d'auto-réponse (une seule, globale). */
+@Entity(tableName = "auto_reply_rules")
+data class AutoReplyRule(
+    @PrimaryKey val id: Int = 1,
+    val enabled: Boolean = false,
+    val replyText: String = "Je ne peux pas répondre pour le moment, je vous recontacte dès que possible.",
+    val mode: String = "ALL_EXCEPT",   // ALL_EXCEPT (tous sauf liste noire) / ONLY (liste blanche)
+    val numbers: String = "",          // liste de numéros séparés par des virgules
+    val delayMinutes: Int = 0,         // délai avant réponse
+    val onlyWhenIdle: Boolean = false  // ne répondre que si téléphone inoccupé
 )

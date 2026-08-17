@@ -13,6 +13,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import com.fabrice.plansms.scheduler.UpdateChecker
+import com.fabrice.plansms.scheduler.UpdateDownloader
 import com.fabrice.plansms.ui.MainScreen
 import com.fabrice.plansms.ui.PlanSmsViewModel
 import com.fabrice.plansms.ui.theme.PlanSmsTheme
@@ -29,6 +31,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestPermissionsIfNeeded()
+        checkUpdateAtLaunch()
         setContent {
             PlanSmsTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -41,6 +44,7 @@ class MainActivity : ComponentActivity() {
     private fun requestPermissionsIfNeeded() {
         val needed = mutableListOf(
             Manifest.permission.SEND_SMS,
+            Manifest.permission.RECEIVE_SMS,
             Manifest.permission.RECEIVE_BOOT_COMPLETED
         )
         if (Build.VERSION.SDK_INT >= 33) needed.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -49,6 +53,16 @@ class MainActivity : ComponentActivity() {
         }
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    /** MAJ auto : vérifie au lancement si activé, télécharge et installe. */
+    private fun checkUpdateAtLaunch() {
+        if (!UpdateChecker.isAutoUpdateEnabled(this)) return
+        val info = UpdateChecker.check(this, UpdateChecker.versionName(this))
+        if (info != null) {
+            UpdateDownloader.start(this, info.apkUrl)
+            AppLogger.i("MainActivity", "MAJ auto : téléchargement v${info.version}")
         }
     }
 }

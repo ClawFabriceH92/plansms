@@ -1,5 +1,6 @@
 package com.fabrice.plansms.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.fabrice.plansms.data.Channel
 import com.fabrice.plansms.data.RepeatRule
 import com.fabrice.plansms.data.ScheduledMessage
 import com.fabrice.plansms.ui.PlanSmsViewModel
@@ -59,6 +61,9 @@ fun EditScreen(
     var noSend by remember { mutableStateOf(editing?.noSendStart ?: -1 >= 0) }
     var noSendStart by remember { mutableStateOf(editing?.noSendStart?.toString() ?: "22") }
     var noSendEnd by remember { mutableStateOf(editing?.noSendEnd?.toString() ?: "07") }
+    var channel by remember { mutableStateOf(editing?.channel ?: Channel.SMS) }
+    var useGroup by remember { mutableStateOf(editing?.groupId ?: 0L > 0) }
+    var selectedGroupId by remember { mutableStateOf(editing?.groupId ?: 0L) }
     var error by remember { mutableStateOf("") }
 
     // Boutons templates rapides
@@ -68,13 +73,57 @@ fun EditScreen(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        OutlinedTextField(
-            value = phone,
-            onValueChange = { phone = it },
-            label = { Text("Destinataire (numéro)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Canal d'envoi
+        Text("Canal", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(Channel.SMS to "SMS", Channel.WHATSAPP to "WhatsApp").forEach { (ch, label) ->
+                FilterChip(
+                    selected = channel == ch,
+                    onClick = { channel = ch },
+                    label = { Text(label) }
+                )
+            }
+        }
+        if (channel == Channel.WHATSAPP) {
+            Text(
+                "WhatsApp est semi-automatique : une notification apparaîtra à l'heure dite, appuie pour ouvrir WhatsApp avec le message pré-rempli.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Destinataire : numéro ou groupe
+        if (state.groups.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Destinataire :", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.width(8.dp))
+                FilterChip(
+                    selected = useGroup,
+                    onClick = { useGroup = !useGroup },
+                    label = { Text(if (useGroup) "Groupe" else "Numéro") }
+                )
+            }
+        }
+        if (useGroup) {
+            val groups = state.groups
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                groups.forEach { g ->
+                    FilterChip(
+                        selected = selectedGroupId == g.id,
+                        onClick = { selectedGroupId = g.id },
+                        label = { Text(g.name, maxLines = 1) }
+                    )
+                }
+            }
+        } else {
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { phone = it },
+                label = { Text("Destinataire (numéro)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         if (state.templates.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -124,9 +173,12 @@ fun EditScreen(
             )
         }
 
-        // Répétition
+        // Répétition (scroll horizontal pour ne pas tronquer "Mensuel" sur petit écran)
         Text("Répétition", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState())
+        ) {
             listOf(
                 RepeatRule.ONCE to "Une fois",
                 RepeatRule.DAILY to "Quotidien",
@@ -181,7 +233,9 @@ fun EditScreen(
                     val m = minute.toIntOrNull() ?: run { error = "Minutes invalides"; return@Button }
                     if (h !in 0..23 || m !in 0..59) { error = "Heure hors limites"; return@Button }
                     val parsedDate = parseDate(date) ?: run { error = "Date invalide (JJ/MM/AAAA)"; return@Button }
-                    if (phone.isBlank() || text.isBlank()) { error = "Destinataire et message obligatoires"; return@Button }
+                    val finalGroupId = if (useGroup) selectedGroupId else 0L
+                    if (finalGroupId <= 0 && phone.isBlank()) { error = "Destinataire (numéro ou groupe) obligatoire"; return@Button }
+                    if (text.isBlank()) { error = "Message obligatoire"; return@Button }
                     val cal = Calendar.getInstance().apply {
                         timeInMillis = parsedDate
                         set(Calendar.HOUR_OF_DAY, h)
@@ -200,7 +254,9 @@ fun EditScreen(
                         noSendStart = if (noSend) (noSendStart.toIntOrNull() ?: 22) else -1,
                         noSendEnd = if (noSend) (noSendEnd.toIntOrNull() ?: 7) else -1,
                         status = com.fabrice.plansms.data.SmsStatus.SCHEDULED,
-                        lastError = ""
+                        lastError = "",
+                        channel = channel,
+                        groupId = finalGroupId
                     )
                     if (editingId >= 0) vm.updateMessage(updated) else vm.addMessage(updated)
                     onClose()

@@ -57,3 +57,42 @@ interface SendLogDao {
     @Query("DELETE FROM send_logs")
     suspend fun clear()
 }
+
+@Dao
+interface ContactGroupDao {
+    @Query("SELECT * FROM contact_groups ORDER BY name ASC")
+    fun observeAll(): Flow<List<ContactGroup>>
+
+    @Insert
+    suspend fun insert(g: ContactGroup): Long
+
+    @Query("DELETE FROM contact_groups WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
+@Dao
+interface GroupMemberDao {
+    @Query("SELECT * FROM group_members WHERE groupId = :groupId ORDER BY name ASC")
+    fun observeMembers(groupId: Long): Flow<List<GroupMember>>
+
+    @Query("SELECT * FROM group_members WHERE groupId = :groupId")
+    suspend fun getMembers(groupId: Long): List<GroupMember>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
+    suspend fun insertAll(members: List<GroupMember>)
+
+    @Query("DELETE FROM group_members WHERE groupId = :groupId AND phone = :phone")
+    suspend fun delete(groupId: Long, phone: String)
+}
+
+@Dao
+interface AutoReplyRuleDao {
+    @Query("SELECT * FROM auto_reply_rules WHERE id = 1")
+    fun observe(): Flow<AutoReplyRule?>
+
+    @Query("SELECT * FROM auto_reply_rules WHERE id = 1")
+    suspend fun get(): AutoReplyRule?
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun upsert(rule: AutoReplyRule)
+}

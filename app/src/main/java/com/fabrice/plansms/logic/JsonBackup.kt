@@ -22,7 +22,9 @@ object JsonBackup {
                 .put("weekDays", m.weekDays)
                 .put("noSendStart", m.noSendStart)
                 .put("noSendEnd", m.noSendEnd)
-                .put("status", m.status.name))
+                .put("status", m.status.name)
+                .put("channel", m.channel.name)
+                .put("groupId", m.groupId))
         }
         val tmpls = JSONArray()
         for (t in templates) {
@@ -55,7 +57,10 @@ object JsonBackup {
                     noSendStart = o.optInt("noSendStart", -1),
                     noSendEnd = o.optInt("noSendEnd", -1),
                     status = runCatching { com.fabrice.plansms.data.SmsStatus.valueOf(o.optString("status")) }
-                        .getOrDefault(com.fabrice.plansms.data.SmsStatus.SCHEDULED)
+                        .getOrDefault(com.fabrice.plansms.data.SmsStatus.SCHEDULED),
+                    channel = runCatching { com.fabrice.plansms.data.Channel.valueOf(o.optString("channel")) }
+                        .getOrDefault(com.fabrice.plansms.data.Channel.SMS),
+                    groupId = o.optLong("groupId", 0L)
                 )
             )
         }
