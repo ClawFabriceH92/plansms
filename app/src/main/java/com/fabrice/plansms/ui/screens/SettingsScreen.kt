@@ -133,6 +133,25 @@ fun SettingsScreen(
                     "telechargement" -> Text("Téléchargement en cours…", style = MaterialTheme.typography.bodyMedium)
                     else -> {}
                 }
+                if (!vm.canInstallUnknownApps()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "⚠️ Installation d'apps inconnues NON autorisée pour PlanSMS — les mises à jour ne peuvent pas s'installer.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val intent = android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                android.net.Uri.parse("package:${context.packageName}")
+                            )
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Autoriser l'installation") }
+                }
             }
         }
 

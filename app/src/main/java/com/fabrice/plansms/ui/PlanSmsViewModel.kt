@@ -181,5 +181,7 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     fun isAutoUpdateEnabled(): Boolean = UpdateChecker.isAutoUpdateEnabled(getApplication())
     fun setAutoUpdateEnabled(on: Boolean) = UpdateChecker.setAutoUpdateEnabled(getApplication(), on)
 
+    fun canInstallUnknownApps(): Boolean = com.fabrice.plansms.scheduler.UpdateDownloader.canRequestInstalls(getApplication())
+
     fun countByStatus(status: SmsStatus): Int = _state.value.messages.count { it.status == status }
 }
