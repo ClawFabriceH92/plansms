@@ -128,9 +128,10 @@ fun SettingsScreen(
                     }
                 }
                 when (state.updateInfo) {
-                    "a_jour" -> Text("✅ À jour", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+                    "a_jour" -> Text("✅ À jour (v${BuildConfig.VERSION_NAME})", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
                     "dispo" -> Text("Version ${state.updateVersion} disponible", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
-                    "telechargement" -> Text("Téléchargement en cours…", style = MaterialTheme.typography.bodyMedium)
+                    "telechargement" -> Text("Téléchargement en cours… (progression dans la barre de notification)", style = MaterialTheme.typography.bodyMedium)
+                    "erreur" -> Text("⚠️ ${state.updateError}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     else -> {}
                 }
                 if (!vm.canInstallUnknownApps()) {

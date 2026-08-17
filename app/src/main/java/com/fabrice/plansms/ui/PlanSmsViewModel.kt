@@ -33,8 +33,9 @@ data class PlanSmsUiState(
     val locked: Boolean = false,
     val pinEnabled: Boolean = false,
     val exportText: String = "",
-    val updateInfo: String = "",        // "dispo" / "a_jour" / "erreur" / ""
-    val updateVersion: String = ""
+    val updateInfo: String = "",        // "dispo" / "a_jour" / "erreur" / "telechargement" / ""
+    val updateVersion: String = "",
+    val updateError: String = "",
 )
 
 class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
@@ -157,13 +158,29 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // --- Mise à jour ---
-    fun checkForUpdate() {
+    fun checkForUpdate(doDownloadIfAvailable: Boolean = false) {
         viewModelScope.launch {
-            val info = UpdateChecker.check(getApplication(), UpdateChecker.versionName(getApplication()))
-            _state.value = if (info != null) {
-                _state.value.copy(updateInfo = "dispo", updateVersion = info.version)
-            } else {
-                _state.value.copy(updateInfo = "a_jour")
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                UpdateChecker.checkResult(getApplication(), UpdateChecker.versionName(getApplication()))
+            }
+            when (result) {
+                is UpdateChecker.CheckResult.Update -> {
+                    _state.value = _state.value.copy(
+                        updateInfo = "dispo",
+                        updateVersion = result.info.version,
+                        updateError = ""
+                    )
+                    if (doDownloadIfAvailable) {
+                        val ok = UpdateDownloader.start(getApplication(), result.info.apkUrl)
+                        if (ok) _state.value = _state.value.copy(updateInfo = "telechargement")
+                    }
+                }
+                is UpdateChecker.CheckResult.Current -> {
+                    _state.value = _state.value.copy(updateInfo = "a_jour", updateVersion = "", updateError = "")
+                }
+                is UpdateChecker.CheckResult.Error -> {
+                    _state.value = _state.value.copy(updateInfo = "erreur", updateVersion = "", updateError = result.message)
+                }
             }
         }
     }
@@ -173,8 +190,9 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
             UpdateChecker.check(getApplication(), UpdateChecker.versionName(getApplication()))
         }.getOrNull()
         if (info != null) {
-            UpdateDownloader.start(getApplication(), info.apkUrl)
-            _state.value = _state.value.copy(updateInfo = "telechargement")
+            val ok = UpdateDownloader.start(getApplication(), info.apkUrl)
+            _state.value = if (ok) _state.value.copy(updateInfo = "telechargement", updateError = "")
+            else _state.value.copy(updateInfo = "erreur", updateError = "Permission d'installation refusée — voir la notification")
         }
     }
 

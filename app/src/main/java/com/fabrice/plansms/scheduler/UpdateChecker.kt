@@ -19,6 +19,13 @@ object UpdateChecker {
 
     data class UpdateInfo(val version: String, val apkUrl: String)
 
+    /** Résultat de la vérification : mise à jour dispo / à jour / erreur (détectée, plus de silence). */
+    sealed class CheckResult {
+        data class Update(val info: UpdateInfo) : CheckResult()
+        object Current : CheckResult()
+        data class Error(val message: String) : CheckResult()
+    }
+
     fun isAutoUpdateEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_AUTO, true)
 
@@ -26,13 +33,17 @@ object UpdateChecker {
         prefs(context).edit().putBoolean(KEY_AUTO, on).apply()
     }
 
-    fun check(context: Context, currentVersion: String): UpdateInfo? {
+    fun checkResult(context: Context, currentVersion: String): CheckResult {
         return try {
             val conn = URL(API).openConnection() as HttpURLConnection
             conn.connectTimeout = 10_000
             conn.readTimeout = 10_000
             conn.setRequestProperty("User-Agent", "PlanSMS-Android")
-            if (conn.responseCode != 200) { conn.disconnect(); return null }
+            val code = conn.responseCode
+            if (code != 200) {
+                conn.disconnect()
+                return CheckResult.Error("API GitHub : HTTP $code (limite dépassée ? réessaie dans une heure)")
+            }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
 
@@ -49,12 +60,22 @@ object UpdateChecker {
                 latestSegs = segs
                 latest = UpdateInfo(tag, apkUrl)
             }
-            latest?.takeIf { compare(parseVersion(currentVersion) ?: intArrayOf(0, 0, 0), latestSegs) < 0 }
+            if (latest == null) return CheckResult.Error("Aucun APK trouvé dans les releases")
+            val cur = parseVersion(currentVersion) ?: intArrayOf(0, 0, 0)
+            if (compare(cur, latestSegs) < 0) CheckResult.Update(latest)
+            else CheckResult.Current
         } catch (e: Exception) {
             AppLogger.e("UpdateChecker", "Erreur vérification MAJ", e)
-            null
+            CheckResult.Error(e.message ?: "Erreur réseau")
         }
     }
+
+    /** Compatibilité : ancien retour UpdateInfo? (null = à jour OU erreur). Utiliser checkResult. */
+    fun check(context: Context, currentVersion: String): UpdateInfo? =
+        when (val r = checkResult(context, currentVersion)) {
+            is CheckResult.Update -> r.info
+            else -> null
+        }
 
     private fun parseVersion(v: String): IntArray? {
         val parts = v.split(".").map { it.toIntOrNull() } ?: return null
