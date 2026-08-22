@@ -17,9 +17,26 @@ android {
         versionName = "0.5.0"
     }
 
+    // Signature CI : la release est signée avec le keystore fourni via variables
+    // d'environnement (GitHub Actions). En local, rien ne change (debug par défaut).
+    val ciKeystorePath: String? = System.getenv("PLANSMS_KEYSTORE")
+    if (ciKeystorePath != null) {
+        signingConfigs {
+            create("ci") {
+                storeFile = file(ciKeystorePath)
+                storePassword = System.getenv("PLANSMS_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("PLANSMS_KEY_ALIAS") ?: "plansms"
+                keyPassword = System.getenv("PLANSMS_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (ciKeystorePath != null) {
+                signingConfig = signingConfigs.getByName("ci")
+            }
         }
         debug {
             isMinifyEnabled = false

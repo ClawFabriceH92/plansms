@@ -1,0 +1,81 @@
+name: Build & Release APK
+
+# Construit l'APK release signé et publie une GitHub Release vX.Y.Z avec
+# l'APK en asset (format attendu par l'auto-update intégré — UpdateChecker).
+#
+# Signature :
+#  - si les secrets PLANSMS_KEYSTORE_B64 / PLANSMS_KEYSTORE_PASSWORD
+#    (+ PLANSMS_KEY_ALIAS optionnel) sont configurés dans le repo,
+#    l'APK est signé avec ce keystore → les mises à jour s'installent
+#    par-dessus les versions précédentes signées avec la même clé ;
+#  - sinon, une clé de build est générée pour ce run (l'APK s'installe,
+#    mais la version suivante demandera une désinstallation).
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Version depuis build.gradle.kts
+        id: version
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version détectée : $VERSION"
+
+      - name: Keystore (secret du repo, ou clé générée pour ce build)
+        env:
+          KEYSTORE_B64: ${{ secrets.PLANSMS_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.PLANSMS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.PLANSMS_KEY_ALIAS }}
+        run: |
+          KS="$RUNNER_TEMP/plansms.keystore"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$KS"
+            echo "PLANSMS_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "PLANSMS_KEY_ALIAS=${KEY_ALIAS:-plansms}" >> "$GITHUB_ENV"
+            echo "Keystore du repo utilisé (signature stable)."
+          else
+            keytool -genkeypair -keystore "$KS" -alias plansms \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -storepass plansms-ci -keypass plansms-ci \
+              -dname "CN=PlanSMS, O=Fabrice, C=FR"
+            echo "PLANSMS_KEYSTORE_PASSWORD=plansms-ci" >> "$GITHUB_ENV"
+            echo "PLANSMS_KEY_ALIAS=plansms" >> "$GITHUB_ENV"
+            echo "::warning::Aucun secret PLANSMS_KEYSTORE_B64 : clé de build générée pour ce run. La prochaine version exigera une désinstallation. Configure les secrets pour des mises à jour fluides."
+          fi
+          echo "PLANSMS_KEYSTORE=$KS" >> "$GITHUB_ENV"
+
+      - name: Build APK release (signé)
+        run: gradle :app:assembleRelease --no-daemon
+
+      - name: Renommer l'APK
+        run: cp app/build/outputs/apk/release/app-release.apk "PlanSMS-v${{ steps.version.outputs.version }}.apk"
+
+      - name: Publier la release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: PlanSMS v${{ steps.version.outputs.version }}
+          files: PlanSMS-v${{ steps.version.outputs.version }}.apk
+          generate_release_notes: true
