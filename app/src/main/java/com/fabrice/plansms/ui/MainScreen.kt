@@ -45,7 +45,7 @@ private data class Tab(val label: String, val icon: ImageVector)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(vm: PlanSmsViewModel) {
+fun MainScreen(vm: PlanSmsViewModel, openRdvOnStart: Boolean = false) {
     val state by vm.state.collectAsStateWithLifecycle()
 
     if (state.locked) {
@@ -57,7 +57,7 @@ fun MainScreen(vm: PlanSmsViewModel) {
     var editingId by rememberSaveable { mutableLongStateOf(-1L) }
     var creating by rememberSaveable { mutableStateOf(false) }
     var showHelp by rememberSaveable { mutableStateOf(false) }
-    var showRdv by rememberSaveable { mutableStateOf(false) }
+    var showRdv by rememberSaveable { mutableStateOf(openRdvOnStart) }
 
     val tabs = listOf(
         Tab("Accueil", Icons.Filled.Home),

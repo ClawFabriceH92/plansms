@@ -38,32 +38,43 @@ object ContactsHelper {
         return out.values.toList()
     }
 
+    /** Candidat de rapprochement par nom, avec score (100 = nom identique). */
+    data class NameMatch(val contact: PhoneContact, val score: Int)
+
     /**
-     * Rapprochement par nom/prénom : cherche un contact dont le nom partage
-     * au moins 2 mots avec le nom du participant (ou le début de son email,
-     * ex. jean.dupont@…), ou dont le nom normalisé est identique.
+     * Rapprochement par nom/prénom : contacts dont le nom partage des mots avec
+     * le nom du participant (ou le début de son email, ex. jean.dupont@…).
+     * Retourne jusqu'à 3 candidats triés par pertinence — c'est TOUJOURS
+     * l'utilisateur qui valide, rien n'est associé automatiquement.
      */
-    fun suggestByName(contacts: List<PhoneContact>, attendeeName: String, email: String): PhoneContact? {
+    fun suggestByName(contacts: List<PhoneContact>, attendeeName: String, email: String): List<NameMatch> {
         val source = attendeeName.ifBlank { email.substringBefore("@").replace(Regex("[._-]+"), " ") }
         val tokens = tokens(source)
-        if (tokens.isEmpty()) return null
-        var best: PhoneContact? = null
-        var bestScore = 0
+        if (tokens.isEmpty()) return emptyList()
+        val scored = mutableListOf<NameMatch>()
         for (contact in contacts) {
             val cTokens = tokens(contact.name)
             if (cTokens.isEmpty()) continue
-            val common = tokens.intersect(cTokens).size
-            val exact = tokens == cTokens
+            val common = tokens.intersect(cTokens)
             val score = when {
-                exact -> 100
-                common >= 2 -> common * 10
-                common == 1 && tokens.size == 1 && tokens.first().length >= 4 -> 5
+                tokens == cTokens -> 100                                  // nom identique
+                common.size >= 2 -> common.size * 10                      // prénom + nom
+                common.size == 1 && common.first().length >= 4 -> 5       // un seul mot → incertain
                 else -> 0
             }
-            if (score > bestScore) { bestScore = score; best = contact }
+            if (score > 0) scored.add(NameMatch(contact, score))
         }
-        return best
+        return scored.sortedByDescending { it.score }.take(3)
     }
+
+    /**
+     * Un rapprochement est « sûr » si le meilleur candidat matche prénom + nom
+     * ET qu'il n'est pas à égalité avec un autre candidat. Sinon : doute →
+     * l'UI doit demander confirmation explicite.
+     */
+    fun isStrongMatch(matches: List<NameMatch>): Boolean =
+        matches.isNotEmpty() && matches[0].score >= 20 &&
+            (matches.size == 1 || matches[0].score > matches[1].score)
 
     private fun tokens(name: String): Set<String> =
         java.text.Normalizer.normalize(name.lowercase(), java.text.Normalizer.Form.NFD)

@@ -39,15 +39,15 @@ data class TomorrowRdv(
     val attendeeName: String,        // nom du participant côté calendrier ("" si absent)
     val contactName: String,         // contact trouvé par email ("" si non trouvé)
     val phone: String,               // numéro du contact trouvé ("" si non trouvé)
-    val suggestionContactId: Long = 0,   // rapprochement par nom/prénom (0 = aucun)
-    val suggestionName: String = "",
-    val suggestionPhone: String = ""
+    val suggestions: List<ContactsHelper.PhoneContact> = emptyList(), // candidats par nom (jamais auto-associés)
+    val suggestionStrong: Boolean = false   // true = match prénom+nom sans ambiguïté ; false = doute → confirmation
 )
 
-/** Résultat de la lecture des RDV de demain. */
+/** Résultat de la lecture des RDV du jour cible (demain, ou lundi si on est vendredi/week-end). */
 data class TomorrowRdvResult(
     val withEmail: List<TomorrowRdv>,
-    val withoutEmailCount: Int       // RDV de demain sans participant (ignorés)
+    val withoutEmailCount: Int,      // RDV du jour cible sans participant (ignorés)
+    val targetStart: Long = 0        // minuit du jour cible (pour afficher « demain » / « lundi 25/08 »)
 )
 
 /** Lecture du calendrier + mapping participants → répertoire. */
@@ -199,9 +199,21 @@ object CalendarRepository {
     }
 
     /**
-     * RDV de demain (00:00 → 24:00) ayant au moins un participant avec email
+     * Jour cible des confirmations : demain en semaine, mais jamais le week-end —
+     * vendredi → lundi (+3), samedi → lundi (+2), dimanche → lundi (+1).
+     */
+    fun nextTargetDayOffset(today: java.util.Calendar = java.util.Calendar.getInstance()): Int =
+        when (today.get(java.util.Calendar.DAY_OF_WEEK)) {
+            java.util.Calendar.FRIDAY -> 3
+            java.util.Calendar.SATURDAY -> 2
+            else -> 1
+        }
+
+    /**
+     * RDV du jour cible (00:00 → 24:00) ayant au moins un participant avec email
      * (l'email du propriétaire du calendrier — toi — est ignoré).
-     * Pour chaque RDV : contact trouvé par email, sinon rapprochement par nom/prénom.
+     * Pour chaque RDV : contact trouvé par email, sinon rapprochement par nom/prénom
+     * (simple proposition, jamais d'association automatique).
      * Les calendriers masqués dans PlanSMS sont exclus.
      */
     fun tomorrowMeetings(context: Context): TomorrowRdvResult {
@@ -211,7 +223,7 @@ object CalendarRepository {
         val owners = cals.map { it.ownerAccount.lowercase() }.filter { it.isNotBlank() }.toSet()
 
         val calStart = java.util.Calendar.getInstance().apply {
-            add(java.util.Calendar.DAY_OF_YEAR, 1)
+            add(java.util.Calendar.DAY_OF_YEAR, nextTargetDayOffset(this))
             set(java.util.Calendar.HOUR_OF_DAY, 0)
             set(java.util.Calendar.MINUTE, 0)
             set(java.util.Calendar.SECOND, 0)
@@ -277,22 +289,21 @@ object CalendarRepository {
                 }
                 if (matched != null) { withEmail.add(matched); continue }
 
-                // 2. Rapprochement par nom/prénom (participant ou début d'email)
+                // 2. Rapprochement par nom/prénom (participant ou début d'email) — simple proposition
                 val first = attendees.first()
                 if (phoneContacts == null) phoneContacts = ContactsHelper.allPhoneContacts(context)
-                val suggestion = ContactsHelper.suggestByName(phoneContacts!!, first.name, first.email)
+                val matches = ContactsHelper.suggestByName(phoneContacts!!, first.name, first.email)
                 withEmail.add(
                     TomorrowRdv(
                         event = event, email = first.email, attendeeName = first.name,
                         contactName = "", phone = "",
-                        suggestionContactId = suggestion?.contactId ?: 0,
-                        suggestionName = suggestion?.name ?: "",
-                        suggestionPhone = suggestion?.phone ?: ""
+                        suggestions = matches.map { it.contact },
+                        suggestionStrong = ContactsHelper.isStrongMatch(matches)
                     )
                 )
             }
         }
-        return TomorrowRdvResult(withEmail = withEmail, withoutEmailCount = withoutEmail)
+        return TomorrowRdvResult(withEmail = withEmail, withoutEmailCount = withoutEmail, targetStart = start)
     }
 
     /** Mapping : email du participant → (nom, numéro) du contact Android. */

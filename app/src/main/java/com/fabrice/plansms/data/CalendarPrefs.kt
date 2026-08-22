@@ -11,6 +11,7 @@ object CalendarPrefs {
     private const val PREFS = "plansms_calendar"
     private const val KEY_HIDDEN = "hidden_calendar_ids"
     private const val KEY_CONFIRM_MSG = "rdv_confirm_message"
+    private const val KEY_REMINDER = "rdv_reminder_enabled"
 
     const val DEFAULT_CONFIRM_MESSAGE =
         "Bonjour, nous avons rendez-vous demain. En cas d'indisponibilité de votre part, merci de me prévenir. Cordialement."
@@ -34,5 +35,13 @@ object CalendarPrefs {
 
     fun setConfirmMessage(context: Context, message: String) {
         prefs(context).edit().putString(KEY_CONFIRM_MSG, message.trim()).apply()
+    }
+
+    /** Rappel quotidien 15h (jours ouvrés) pour les RDV du lendemain. Activé par défaut. */
+    fun reminderEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_REMINDER, true)
+
+    fun setReminderEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_REMINDER, enabled).apply()
     }
 }
