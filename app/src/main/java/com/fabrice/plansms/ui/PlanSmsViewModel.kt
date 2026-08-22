@@ -35,6 +35,8 @@ data class PlanSmsUiState(
     val calendarCounts: Map<Long, Int> = emptyMap(),
     val callLog: List<CallEntry> = emptyList(),
     val callLogLoaded: Boolean = false,
+    val tomorrowRdv: List<com.fabrice.plansms.data.TomorrowRdv>? = null,  // null = pas encore chargé
+    val tomorrowRdvNoEmail: Int = 0,
     val bulkSending: Boolean = false,
     val bulkProgress: String = "",      // "2/5" pendant un envoi groupé
     val bulkReport: String = "",        // rapport final "4 envoyés · 1 échec"
@@ -116,24 +118,61 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Envoie le même SMS à chaque numéro sélectionné (3 s entre envois, anti-spam) et journalise. */
-    fun sendBulkSms(recipients: List<CallEntry>, text: String) {
+    /** Envoi groupé depuis le journal d'appels. */
+    fun sendBulkSms(recipients: List<CallEntry>, text: String) =
+        sendBulk(recipients.map { Triple(it.number, it.name, System.currentTimeMillis()) }, text)
+
+    // --- RDV de demain → SMS de confirmation ---
+    fun loadTomorrowRdv() {
+        viewModelScope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.fabrice.plansms.data.CalendarRepository.tomorrowMeetings(getApplication())
+            }
+            _state.value = _state.value.copy(
+                tomorrowRdv = result.withEmail,
+                tomorrowRdvNoEmail = result.withoutEmailCount
+            )
+        }
+    }
+
+    fun rdvConfirmMessage(): String =
+        com.fabrice.plansms.data.CalendarPrefs.confirmMessage(getApplication())
+
+    /**
+     * Envoie la confirmation à chaque destinataire (numéro, nom, heure du RDV pour {{date}}/{{heure}})
+     * et mémorise le texte comme message par défaut.
+     */
+    fun sendRdvConfirmations(recipients: List<Triple<String, String, Long>>, text: String) {
+        com.fabrice.plansms.data.CalendarPrefs.setConfirmMessage(getApplication(), text)
+        sendBulk(recipients, text)
+    }
+
+    /** Fusion d'infos : ajoute l'email au contact rapproché puis recharge les RDV. */
+    fun attachEmailToContact(contactId: Long, email: String) {
+        viewModelScope.launch {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.fabrice.plansms.data.ContactsHelper.addEmailToContact(getApplication(), contactId, email)
+            }
+            loadTomorrowRdv()
+        }
+    }
+
+    /** Envoi groupé générique : (numéro, nom, date pour les variables), 3 s entre envois. */
+    private fun sendBulk(recipients: List<Triple<String, String, Long>>, text: String) {
         if (recipients.isEmpty() || text.isBlank() || _state.value.bulkSending) return
         viewModelScope.launch {
             _state.value = _state.value.copy(bulkSending = true, bulkReport = "", bulkProgress = "0/${recipients.size}")
             var ok = 0
             var ko = 0
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                recipients.forEachIndexed { i, r ->
-                    // {{prenom}}/{{nom}} → nom de l'appelant, {{date}}/{{heure}} → maintenant
-                    val resolved = com.fabrice.plansms.logic.SmsRules.resolveTemplate(
-                        text, r.name, System.currentTimeMillis()
-                    )
-                    val err = com.fabrice.plansms.scheduler.SmsSender.send(getApplication(), r.number, resolved)
+                recipients.forEachIndexed { i, (number, name, dateMillis) ->
+                    // {{prenom}}/{{nom}} → nom du destinataire, {{date}}/{{heure}} → date fournie
+                    val resolved = com.fabrice.plansms.logic.SmsRules.resolveTemplate(text, name, dateMillis)
+                    val err = com.fabrice.plansms.scheduler.SmsSender.send(getApplication(), number, resolved)
                     repo.addLog(
                         com.fabrice.plansms.data.SendLog(
                             scheduledId = 0,
-                            phone = if (r.name.isBlank()) r.number else "${r.name} (${r.number})",
+                            phone = if (name.isBlank()) number else "$name ($number)",
                             textPreview = resolved.take(80),
                             status = if (err == null) "SENT" else "FAILED",
                             error = err ?: ""
