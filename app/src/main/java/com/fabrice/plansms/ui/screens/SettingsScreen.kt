@@ -58,12 +58,18 @@ fun SettingsScreen(
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showAutoReply by remember { mutableStateOf(false) }
+    var showTemplates by remember { mutableStateOf(false) }
     var showCalendars by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var autoUpdate by remember { mutableStateOf(vm.isAutoUpdateEnabled()) }
 
     if (showAutoReply) {
         AutoReplyScreen(vm, onBack = { showAutoReply = false })
+        return
+    }
+
+    if (showTemplates) {
+        TemplatesScreen(vm, onBack = { showTemplates = false }, modifier = modifier)
         return
     }
 
@@ -83,6 +89,21 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { showAutoReply = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Configurer l'auto-réponse")
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
+                Text("Modèles de messages", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${state.templates.size} modèle(s). Crée, modifie ou supprime les modèles utilisés partout : SMS programmés et SMS aux appelants. Variables : {{prenom}}, {{nom}}, {{date}}, {{heure}}.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { showTemplates = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Gérer les modèles")
                 }
             }
         }

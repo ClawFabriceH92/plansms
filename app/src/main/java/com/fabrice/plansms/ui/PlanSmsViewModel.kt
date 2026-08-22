@@ -125,12 +125,16 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
             var ko = 0
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 recipients.forEachIndexed { i, r ->
-                    val err = com.fabrice.plansms.scheduler.SmsSender.send(getApplication(), r.number, text)
+                    // {{prenom}}/{{nom}} → nom de l'appelant, {{date}}/{{heure}} → maintenant
+                    val resolved = com.fabrice.plansms.logic.SmsRules.resolveTemplate(
+                        text, r.name, System.currentTimeMillis()
+                    )
+                    val err = com.fabrice.plansms.scheduler.SmsSender.send(getApplication(), r.number, resolved)
                     repo.addLog(
                         com.fabrice.plansms.data.SendLog(
                             scheduledId = 0,
                             phone = if (r.name.isBlank()) r.number else "${r.name} (${r.number})",
-                            textPreview = text.take(80),
+                            textPreview = resolved.take(80),
                             status = if (err == null) "SENT" else "FAILED",
                             error = err ?: ""
                         )
