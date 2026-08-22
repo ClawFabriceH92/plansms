@@ -57,6 +57,7 @@ fun MainScreen(vm: PlanSmsViewModel) {
     var editingId by rememberSaveable { mutableLongStateOf(-1L) }
     var creating by rememberSaveable { mutableStateOf(false) }
     var showHelp by rememberSaveable { mutableStateOf(false) }
+    var showRdv by rememberSaveable { mutableStateOf(false) }
 
     val tabs = listOf(
         Tab("Accueil", Icons.Filled.Home),
@@ -66,8 +67,8 @@ fun MainScreen(vm: PlanSmsViewModel) {
         Tab("Réglages", Icons.Filled.Settings)
     )
 
-    val onSubScreen = creating || editingId >= 0 || showHelp
-    val closeSubScreen = { creating = false; editingId = -1L; showHelp = false }
+    val onSubScreen = creating || editingId >= 0 || showHelp || showRdv
+    val closeSubScreen = { creating = false; editingId = -1L; showHelp = false; showRdv = false }
 
     // Bouton retour du téléphone : ferme l'écran secondaire au lieu de quitter l'app
     BackHandler(enabled = onSubScreen) { closeSubScreen() }
@@ -80,6 +81,7 @@ fun MainScreen(vm: PlanSmsViewModel) {
                         editingId >= 0 -> "Modifier le message"
                         creating -> "Nouveau message"
                         showHelp -> "Aide"
+                        showRdv -> "RDV de demain"
                         else -> tabs[selectedTab].label
                     }
                 ) },
@@ -132,10 +134,16 @@ fun MainScreen(vm: PlanSmsViewModel) {
                 onClose = { showHelp = false },
                 modifier = Modifier.padding(padding)
             )
+            showRdv -> com.fabrice.plansms.ui.screens.ConfirmRdvScreen(
+                vm = vm,
+                onClose = { showRdv = false },
+                modifier = Modifier.padding(padding)
+            )
             selectedTab == 0 -> HomeScreen(
                 vm = vm,
                 onNew = { creating = true },
                 onEdit = { id -> editingId = id },
+                onConfirmRdv = { showRdv = true },
                 modifier = Modifier.padding(padding)
             )
             selectedTab == 1 -> GroupsScreen(vm, Modifier.padding(padding))

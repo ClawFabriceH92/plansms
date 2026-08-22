@@ -113,7 +113,7 @@ fun SettingsScreen(
                 Text("Calendrier", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Vérifie que tes calendriers (dont Outlook) sont visibles par PlanSMS.",
+                    "Vérifie tes calendriers (dont Outlook) et masque ceux à ignorer dans PlanSMS (RDV de demain, sélecteur d'agenda).",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(8.dp))
@@ -300,14 +300,19 @@ fun SettingsScreen(
 private fun CalendarDiagnosticDialog(vm: PlanSmsViewModel, onDismiss: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val cals = state.calendars
+    val context = LocalContext.current
+    var hiddenIds by remember {
+        mutableStateOf(com.fabrice.plansms.data.CalendarPrefs.hiddenIds(context))
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Calendriers visibles") },
+        title = { Text("Calendriers") },
         text = {
             when {
                 cals == null -> Text("Chargement…")
                 cals.isEmpty() -> Column {
                     Text("⚠️ Aucun calendrier trouvé sur le téléphone.")
+                    Spacer(Modifier.height(4.dp))
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Vérifie : 1) la permission Calendrier est accordée à PlanSMS (Réglages Android → Applications → PlanSMS), 2) un compte calendrier existe dans l'app Calendrier du téléphone.",
@@ -339,10 +344,19 @@ private fun CalendarDiagnosticDialog(vm: PlanSmsViewModel, onDismiss: () -> Unit
                                             style = MaterialTheme.typography.labelLarge,
                                             color = if ((state.calendarCounts[c.id] ?: 0) > 0) Success else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
+                                        Switch(
+                                            checked = c.id !in hiddenIds,
+                                            onCheckedChange = { on ->
+                                                com.fabrice.plansms.data.CalendarPrefs.setHidden(context, c.id, !on)
+                                                hiddenIds = com.fabrice.plansms.data.CalendarPrefs.hiddenIds(context)
+                                            }
+                                        )
                                         Text(
-                                            if (c.visible) "visible" else "masqué",
+                                            if (c.id in hiddenIds) "masqué (PlanSMS)"
+                                            else if (c.visible) "utilisé" else "masqué (téléphone)",
                                             style = MaterialTheme.typography.labelLarge,
-                                            color = if (c.visible) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                                            color = if (c.id in hiddenIds || !c.visible) MaterialTheme.colorScheme.error
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }

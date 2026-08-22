@@ -50,11 +50,18 @@ fun HomeScreen(
     vm: PlanSmsViewModel,
     onNew: () -> Unit,
     onEdit: (Long) -> Unit,
+    onConfirmRdv: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
 
     Column(modifier = modifier.fillMaxSize()) {
+        androidx.compose.material3.OutlinedButton(
+            onClick = onConfirmRdv,
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 10.dp)
+        ) {
+            Text("📅 Confirmer les RDV de demain")
+        }
         if (state.messages.isEmpty()) {
             EmptyState(onNew)
         } else {
