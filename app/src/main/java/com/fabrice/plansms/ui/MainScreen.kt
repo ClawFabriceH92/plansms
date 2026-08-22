@@ -139,7 +139,7 @@ fun MainScreen(vm: PlanSmsViewModel) {
                 modifier = Modifier.padding(padding)
             )
             selectedTab == 1 -> GroupsScreen(vm, Modifier.padding(padding))
-            selectedTab == 2 -> TemplatesScreen(vm, Modifier.padding(padding))
+            selectedTab == 2 -> TemplatesScreen(vm, modifier = Modifier.padding(padding))
             selectedTab == 3 -> JournalScreen(vm, Modifier.padding(padding))
             else -> SettingsScreen(
                 vm = vm,
