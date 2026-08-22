@@ -1,7 +1,9 @@
 package com.fabrice.plansms.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
@@ -9,6 +11,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -63,16 +66,34 @@ fun MainScreen(vm: PlanSmsViewModel) {
         Tab("Réglages", Icons.Filled.Settings)
     )
 
+    val onSubScreen = creating || editingId >= 0 || showHelp
+    val closeSubScreen = { creating = false; editingId = -1L; showHelp = false }
+
+    // Bouton retour du téléphone : ferme l'écran secondaire au lieu de quitter l'app
+    BackHandler(enabled = onSubScreen) { closeSubScreen() }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(
                     when {
-                        creating || editingId >= 0 -> "Nouveau message"
+                        editingId >= 0 -> "Modifier le message"
+                        creating -> "Nouveau message"
                         showHelp -> "Aide"
                         else -> tabs[selectedTab].label
                     }
                 ) },
+                navigationIcon = {
+                    if (onSubScreen) {
+                        IconButton(onClick = closeSubScreen) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Retour",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = NightBlue,
                     titleContentColor = Color.White

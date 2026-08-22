@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabrice.plansms.data.AutoReplyRule
 import com.fabrice.plansms.data.CalendarInfo
+import com.fabrice.plansms.data.CallEntry
+import com.fabrice.plansms.data.CallLogRepository
 import com.fabrice.plansms.data.ContactGroup
 import com.fabrice.plansms.data.GroupMember
 import com.fabrice.plansms.data.ScheduledMessage
@@ -31,6 +33,11 @@ data class PlanSmsUiState(
     val calendars: List<CalendarInfo>? = null,  // null = pas encore chargé, vide = aucun
     val calendarsLoaded: Boolean = false,
     val calendarCounts: Map<Long, Int> = emptyMap(),
+    val callLog: List<CallEntry> = emptyList(),
+    val callLogLoaded: Boolean = false,
+    val bulkSending: Boolean = false,
+    val bulkProgress: String = "",      // "2/5" pendant un envoi groupé
+    val bulkReport: String = "",        // rapport final "4 envoyés · 1 échec"
     val locked: Boolean = false,
     val pinEnabled: Boolean = false,
     val exportText: String = "",
@@ -98,6 +105,52 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteTemplate(t: Template) = viewModelScope.launch { repo.deleteTemplate(t) }
 
     fun clearLogs() = viewModelScope.launch { repo.clearLogs() }
+
+    // --- Journal d'appels → SMS groupé ---
+    fun loadCallLog() {
+        viewModelScope.launch {
+            val calls = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                CallLogRepository.readRecentCalls(getApplication())
+            }
+            _state.value = _state.value.copy(callLog = calls, callLogLoaded = true)
+        }
+    }
+
+    /** Envoie le même SMS à chaque numéro sélectionné (3 s entre envois, anti-spam) et journalise. */
+    fun sendBulkSms(recipients: List<CallEntry>, text: String) {
+        if (recipients.isEmpty() || text.isBlank() || _state.value.bulkSending) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(bulkSending = true, bulkReport = "", bulkProgress = "0/${recipients.size}")
+            var ok = 0
+            var ko = 0
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                recipients.forEachIndexed { i, r ->
+                    val err = com.fabrice.plansms.scheduler.SmsSender.send(getApplication(), r.number, text)
+                    repo.addLog(
+                        com.fabrice.plansms.data.SendLog(
+                            scheduledId = 0,
+                            phone = if (r.name.isBlank()) r.number else "${r.name} (${r.number})",
+                            textPreview = text.take(80),
+                            status = if (err == null) "SENT" else "FAILED",
+                            error = err ?: ""
+                        )
+                    )
+                    if (err == null) ok++ else ko++
+                    _state.value = _state.value.copy(bulkProgress = "${i + 1}/${recipients.size}")
+                    if (i < recipients.size - 1) kotlinx.coroutines.delay(3000)
+                }
+            }
+            val report = buildString {
+                append("$ok envoyé${if (ok > 1) "s" else ""}")
+                if (ko > 0) append(" · $ko échec${if (ko > 1) "s" else ""}")
+            }
+            _state.value = _state.value.copy(bulkSending = false, bulkReport = report, bulkProgress = "")
+        }
+    }
+
+    fun clearBulkReport() {
+        _state.value = _state.value.copy(bulkReport = "", bulkProgress = "")
+    }
 
     // --- Groupes ---
     fun addGroup(name: String) = viewModelScope.launch { repo.addGroup(name) }

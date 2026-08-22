@@ -62,6 +62,7 @@ class SmsRepository(private val context: Context) {
     suspend fun deleteTemplate(t: Template) = tmplDao.delete(t)
 
     suspend fun clearLogs() = logDao.clear()
+    suspend fun addLog(log: SendLog) = logDao.insert(log)
 
     suspend fun addGroup(name: String): Long = groupDao.insert(ContactGroup(name = name))
     suspend fun deleteGroup(id: Long) = groupDao.deleteById(id)
