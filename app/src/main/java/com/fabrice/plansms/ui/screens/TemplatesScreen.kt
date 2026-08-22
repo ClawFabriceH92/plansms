@@ -1,5 +1,7 @@
 package com.fabrice.plansms.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,8 +14,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -29,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,12 +41,35 @@ import com.fabrice.plansms.data.Template
 import com.fabrice.plansms.ui.PlanSmsViewModel
 import com.fabrice.plansms.ui.theme.Danger
 
+/**
+ * Gestion des modèles : créer (bouton), modifier (touche la carte ou ✏️),
+ * supprimer (🗑). Utilisable comme onglet, ou depuis Réglages via [onBack]
+ * (affiche alors un en-tête avec flèche retour).
+ */
 @Composable
-fun TemplatesScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
+fun TemplatesScreen(
+    vm: PlanSmsViewModel,
+    onBack: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<Template?>(null) }
+
+    if (onBack != null) {
+        BackHandler { onBack() }
+    }
 
     Column(modifier = modifier.fillMaxSize().padding(14.dp)) {
+        if (onBack != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                }
+                Text("Modèles de messages", style = MaterialTheme.typography.titleLarge)
+            }
+            Spacer(Modifier.height(6.dp))
+        }
         Button(
             onClick = { showCreate = true },
             modifier = Modifier.fillMaxWidth()
@@ -58,9 +86,19 @@ fun TemplatesScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
+            Text(
+                "Touche un modèle pour le modifier.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(state.templates, key = { it.id }) { t ->
-                    TemplateCard(t, onDelete = { vm.deleteTemplate(t) })
+                    TemplateCard(
+                        t = t,
+                        onEdit = { editing = t },
+                        onDelete = { vm.deleteTemplate(t) }
+                    )
                 }
             }
         }
@@ -68,6 +106,7 @@ fun TemplatesScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
 
     if (showCreate) {
         TemplateDialog(
+            title = "Nouveau modèle",
             onConfirm = { name, body ->
                 vm.addTemplate(Template(name = name, body = body))
                 showCreate = false
@@ -75,18 +114,34 @@ fun TemplatesScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
             onDismiss = { showCreate = false }
         )
     }
+
+    editing?.let { t ->
+        TemplateDialog(
+            title = "Modifier le modèle",
+            initialName = t.name,
+            initialBody = t.body,
+            onConfirm = { name, body ->
+                vm.updateTemplate(t.copy(name = name, body = body))
+                editing = null
+            },
+            onDismiss = { editing = null }
+        )
+    }
 }
 
 @Composable
-private fun TemplateCard(t: Template, onDelete: () -> Unit) {
+private fun TemplateCard(t: Template, onEdit: () -> Unit, onDelete: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().clickable { onEdit() }
     ) {
-        Row(Modifier.padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(t.name, style = MaterialTheme.typography.titleMedium)
                 Text(t.body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Filled.Edit, contentDescription = "Modifier", tint = MaterialTheme.colorScheme.primary)
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Filled.Delete, contentDescription = "Supprimer", tint = Danger)
@@ -96,12 +151,18 @@ private fun TemplateCard(t: Template, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun TemplateDialog(onConfirm: (String, String) -> Unit, onDismiss: () -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
+private fun TemplateDialog(
+    title: String,
+    initialName: String = "",
+    initialBody: String = "",
+    onConfirm: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(initialName) }
+    var body by remember { mutableStateOf(initialBody) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nouveau modèle") },
+        title = { Text(title) },
         text = {
             Column {
                 OutlinedTextField(

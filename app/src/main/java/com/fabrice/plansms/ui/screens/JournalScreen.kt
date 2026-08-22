@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -330,6 +331,41 @@ private fun ComposeSmsStep(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var text by rememberSaveable { mutableStateOf("") }
+    var showTemplatePicker by remember { mutableStateOf(false) }
+
+    if (showTemplatePicker) {
+        AlertDialog(
+            onDismissRequest = { showTemplatePicker = false },
+            title = { Text("Choisir un modèle") },
+            text = {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.height(340.dp)
+                ) {
+                    items(state.templates, key = { it.id }) { t ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                text = t.body
+                                showTemplatePicker = false
+                            }
+                        ) {
+                            Column(Modifier.padding(10.dp)) {
+                                Text(t.name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    t.body,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showTemplatePicker = false }) { Text("Fermer") } }
+        )
+    }
 
     Column(modifier = modifier.fillMaxSize().padding(14.dp)) {
         // En-tête avec retour
@@ -385,33 +421,32 @@ private fun ComposeSmsStep(
             )
         }
 
-        // Modèles rapides
-        if (state.templates.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Modèles :",
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.align(Alignment.CenterVertically)
-                )
-                state.templates.take(3).forEach { t ->
-                    FilterChip(
-                        selected = false,
-                        onClick = { text = t.body },
-                        label = { Text(t.name, maxLines = 1) }
-                    )
-                }
-            }
+        // Choix d'un modèle (liste complète)
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { showTemplatePicker = true },
+            enabled = !state.bulkSending && state.templates.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                if (state.templates.isEmpty()) "📝 Aucun modèle — crée-les dans Réglages"
+                else "📝 Utiliser un modèle (${state.templates.size})"
+            )
         }
 
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
-            label = { Text("Message (identique pour tous)") },
+            label = { Text("Message") },
             minLines = 4,
             enabled = !state.bulkSending,
             modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            "{{prenom}} et {{nom}} sont remplacés par le nom de l'appelant (si connu), {{date}} et {{heure}} par le moment de l'envoi.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(Modifier.height(12.dp))
