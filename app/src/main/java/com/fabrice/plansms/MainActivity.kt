@@ -33,10 +33,13 @@ class MainActivity : ComponentActivity() {
         if (UpdateChecker.isAutoUpdateEnabled(this)) {
             vm.checkForUpdate(doDownloadIfAvailable = true)
         }
+        // Rappel 15h des RDV du lendemain (jours ouvrés)
+        com.fabrice.plansms.scheduler.RdvReminder.schedule(this)
+        val openRdv = intent?.getBooleanExtra(com.fabrice.plansms.scheduler.RdvReminder.EXTRA_OPEN_RDV, false) == true
         setContent {
             PlanSmsTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    MainScreen(vm)
+                    MainScreen(vm, openRdvOnStart = openRdv)
                 }
             }
         }

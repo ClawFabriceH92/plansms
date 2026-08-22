@@ -1,6 +1,7 @@
 package com.fabrice.plansms.ui.screens
 
 import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,18 +45,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.fabrice.plansms.data.ContactsHelper
 import com.fabrice.plansms.data.TomorrowRdv
 import com.fabrice.plansms.ui.PlanSmsViewModel
 import com.fabrice.plansms.ui.theme.Danger
 import com.fabrice.plansms.ui.theme.Success
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 /**
- * RDV de demain avec participant (email) : contact trouvé par email → coche + envoi ;
- * sinon rapprochement par nom/prénom proposé (utiliser le numéro / associer l'email au contact).
+ * RDV du prochain jour ouvré (demain, ou lundi si vendredi/week-end) avec participant :
+ *  - contact trouvé par email → coché, prêt à envoyer ;
+ *  - sinon, rapprochement par nom/prénom PROPOSÉ : rien n'est utilisé ni associé
+ *    sans validation explicite (dialogue de confirmation, association opt-in).
  */
 @Composable
 fun ConfirmRdvScreen(
@@ -64,26 +69,50 @@ fun ConfirmRdvScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var text by rememberSaveable { mutableStateOf(vm.rdvConfirmMessage()) }
-    var excluded by rememberSaveable { mutableStateOf(setOf<Long>()) }        // eventIds décochés
-    var useSuggestion by rememberSaveable { mutableStateOf(setOf<Long>()) }   // eventIds envoyés via rapprochement
-    var pendingAttach by remember { mutableStateOf<TomorrowRdv?>(null) }
+    var excluded by rememberSaveable { mutableStateOf(setOf<Long>()) }   // RDV matchés par email, décochés
+    // RDV envoyés via un rapprochement VALIDÉ : eventId → (numéro, nom)
+    var chosen by rememberSaveable { mutableStateOf(hashMapOf<Long, Pair<String, String>>()) }
+    var dialogFor by remember { mutableStateOf<TomorrowRdv?>(null) }
+    var pendingAttach by remember { mutableStateOf<Pair<Long, String>?>(null) }  // (contactId, email)
 
     val writeContactsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        val rdv = pendingAttach
+        val attach = pendingAttach
         pendingAttach = null
-        if (granted && rdv != null && rdv.suggestionContactId > 0) {
-            vm.attachEmailToContact(rdv.suggestionContactId, rdv.email)
+        if (granted && attach != null) {
+            vm.attachEmailToContact(attach.first, attach.second)
+        }
+    }
+    val attachWithPermission: (Long, String) -> Unit = { contactId, email ->
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            vm.attachEmailToContact(contactId, email)
+        } else {
+            pendingAttach = contactId to email
+            writeContactsLauncher.launch(Manifest.permission.WRITE_CONTACTS)
         }
     }
 
     LaunchedEffect(Unit) { vm.loadTomorrowRdv() }
     BackHandler { if (!state.bulkSending) onClose() }
 
-    val tomorrowLabel = remember {
-        val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-        SimpleDateFormat("EEEE dd/MM", Locale.FRANCE).format(cal.time)
+    val targetLabel = if (state.tomorrowRdvTarget > 0)
+        SimpleDateFormat("EEEE dd/MM", Locale.FRANCE).format(Date(state.tomorrowRdvTarget))
+    else "demain"
+
+    // Dialogue de validation d'un rapprochement (jamais d'association silencieuse)
+    dialogFor?.let { rdv ->
+        AssociateDialog(
+            rdv = rdv,
+            onDismiss = { dialogFor = null },
+            onValidate = { contact, alsoAttachEmail ->
+                chosen = HashMap(chosen).apply { put(rdv.event.id, contact.phone to contact.name) }
+                if (alsoAttachEmail) attachWithPermission(contact.contactId, rdv.email)
+                dialogFor = null
+            }
+        )
     }
 
     Column(modifier = modifier.fillMaxSize().padding(14.dp)) {
@@ -91,7 +120,7 @@ fun ConfirmRdvScreen(
             IconButton(onClick = onClose, enabled = !state.bulkSending) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
             }
-            Text("RDV de demain ($tomorrowLabel)", style = MaterialTheme.typography.titleLarge)
+            Text("RDV de $targetLabel", style = MaterialTheme.typography.titleLarge)
         }
 
         // Rapport final
@@ -126,13 +155,13 @@ fun ConfirmRdvScreen(
             rdvList.isEmpty() -> {
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Aucun rendez-vous demain avec un participant (email).",
+                    "Aucun rendez-vous $targetLabel avec un participant (email).",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 if (state.tomorrowRdvNoEmail > 0) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "${state.tomorrowRdvNoEmail} RDV demain sans participant — ignoré(s).",
+                        "${state.tomorrowRdvNoEmail} RDV sans participant — ignoré(s).",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -147,13 +176,12 @@ fun ConfirmRdvScreen(
                 OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("← Retour") }
             }
             else -> {
-                // Destinataires effectifs : match email coché, ou rapprochement activé
                 val recipients = rdvList.mapNotNull { r ->
                     when {
                         r.phone.isNotEmpty() && r.event.id !in excluded ->
                             Triple(r.phone, r.contactName, r.event.start)
-                        r.suggestionPhone.isNotEmpty() && r.event.id in useSuggestion ->
-                            Triple(r.suggestionPhone, r.suggestionName, r.event.start)
+                        r.event.id in chosen ->
+                            chosen[r.event.id]?.let { (phone, name) -> Triple(phone, name, r.event.start) }
                         else -> null
                     }
                 }
@@ -165,28 +193,20 @@ fun ConfirmRdvScreen(
                     items(rdvList, key = { "${it.event.id}-${it.event.start}" }) { r ->
                         RdvCard(
                             r = r,
-                            checked = when {
-                                r.phone.isNotEmpty() -> r.event.id !in excluded
-                                else -> r.event.id in useSuggestion
-                            },
+                            checked = if (r.phone.isNotEmpty()) r.event.id !in excluded else r.event.id in chosen,
+                            chosenContact = chosen[r.event.id],
                             enabled = !state.bulkSending,
                             onToggle = {
-                                if (r.phone.isNotEmpty()) {
-                                    excluded = if (r.event.id in excluded) excluded - r.event.id else excluded + r.event.id
-                                } else if (r.suggestionPhone.isNotEmpty()) {
-                                    useSuggestion = if (r.event.id in useSuggestion) useSuggestion - r.event.id else useSuggestion + r.event.id
+                                when {
+                                    r.phone.isNotEmpty() ->
+                                        excluded = if (r.event.id in excluded) excluded - r.event.id else excluded + r.event.id
+                                    r.event.id in chosen ->
+                                        chosen = HashMap(chosen).apply { remove(r.event.id) }
+                                    r.suggestions.isNotEmpty() ->
+                                        dialogFor = r   // toujours valider via le dialogue — jamais de coche directe
                                 }
                             },
-                            onAttachEmail = {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS)
-                                    == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    vm.attachEmailToContact(r.suggestionContactId, r.email)
-                                } else {
-                                    pendingAttach = r
-                                    writeContactsLauncher.launch(Manifest.permission.WRITE_CONTACTS)
-                                }
-                            }
+                            onOpenDialog = { dialogFor = r }
                         )
                     }
                     if (state.tomorrowRdvNoEmail > 0) {
@@ -210,7 +230,7 @@ fun ConfirmRdvScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "Ce texte est mémorisé pour la prochaine fois. Variables : {{prenom}}, {{nom}}, {{date}}, {{heure}} (heure du RDV).",
+                    "Texte mémorisé pour la prochaine fois. Variables : {{prenom}}, {{nom}}, {{date}}, {{heure}} (heure du RDV).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -243,12 +263,13 @@ fun ConfirmRdvScreen(
 private fun RdvCard(
     r: TomorrowRdv,
     checked: Boolean,
+    chosenContact: Pair<String, String>?,
     enabled: Boolean,
     onToggle: () -> Unit,
-    onAttachEmail: () -> Unit
+    onOpenDialog: () -> Unit
 ) {
     val hourFmt = SimpleDateFormat("HH:mm", Locale.FRANCE)
-    val selectable = r.phone.isNotEmpty() || r.suggestionPhone.isNotEmpty()
+    val selectable = r.phone.isNotEmpty() || r.suggestions.isNotEmpty()
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
@@ -271,7 +292,7 @@ private fun RdvCard(
                     Text("📅 ${r.event.calendarName}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 when {
-                    // Cas 1 : contact trouvé par email
+                    // Cas 1 : contact trouvé par email → fiable
                     r.phone.isNotEmpty() -> {
                         Text(
                             "👤 ${r.contactName.ifBlank { r.email }} · ${r.phone}",
@@ -280,23 +301,37 @@ private fun RdvCard(
                         )
                         Text(r.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    // Cas 2 : rapprochement par nom/prénom proposé
-                    r.suggestionPhone.isNotEmpty() -> {
+                    // Cas 2 : rapprochement déjà validé par toi
+                    chosenContact != null -> {
+                        Text(
+                            "✔ Rapprochement validé : ${chosenContact.second} · ${chosenContact.first}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Success
+                        )
+                        Text(r.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = onOpenDialog, enabled = enabled) { Text("Changer…") }
+                    }
+                    // Cas 3 : rapprochement proposé — à valider
+                    r.suggestions.isNotEmpty() -> {
                         Text(
                             "⚠️ ${r.email} absent des contacts",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Danger
                         )
+                        val best = r.suggestions.first()
                         Text(
-                            "Rapprochement proposé : ${r.suggestionName} · ${r.suggestionPhone}\n(coche pour utiliser ce numéro)",
+                            if (r.suggestionStrong)
+                                "Rapprochement proposé : ${best.name} · ${best.phone}"
+                            else
+                                "Rapprochement incertain : ${best.name}${if (r.suggestions.size > 1) " (+${r.suggestions.size - 1} autre(s))" else ""} — à vérifier",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.secondary
                         )
-                        TextButton(onClick = onAttachEmail, enabled = enabled) {
-                            Text("Associer l'email à ce contact")
+                        TextButton(onClick = onOpenDialog, enabled = enabled) {
+                            Text("Vérifier et valider…")
                         }
                     }
-                    // Cas 3 : rien trouvé
+                    // Cas 4 : rien trouvé
                     else -> {
                         Text(
                             "⚠️ ${r.email} : aucun contact trouvé (ni par email, ni par nom). Ajoute ce contact avec son numéro pour l'inclure.",
@@ -308,4 +343,75 @@ private fun RdvCard(
             }
         }
     }
+}
+
+/**
+ * Validation d'un rapprochement : choix du contact parmi les candidats,
+ * association de l'email en OPTION (décochée par défaut). Rien n'est modifié
+ * dans le répertoire sans passer par ce dialogue.
+ */
+@Composable
+private fun AssociateDialog(
+    rdv: TomorrowRdv,
+    onDismiss: () -> Unit,
+    onValidate: (ContactsHelper.PhoneContact, Boolean) -> Unit
+) {
+    var selected by remember {
+        mutableStateOf(if (rdv.suggestionStrong) rdv.suggestions.firstOrNull() else null)
+    }
+    var alsoAttach by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Vérifier le rapprochement") },
+        text = {
+            Column {
+                Text(
+                    "Participant : ${rdv.attendeeName.ifBlank { "(sans nom)" }}\n${rdv.email}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(10.dp))
+                Text("Contact du répertoire :", style = MaterialTheme.typography.labelLarge)
+                rdv.suggestions.forEach { contact ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { selected = contact }
+                    ) {
+                        RadioButton(selected = selected == contact, onClick = { selected = contact })
+                        Column {
+                            Text(contact.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(contact.phone, style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { alsoAttach = !alsoAttach }
+                ) {
+                    Checkbox(checked = alsoAttach, onCheckedChange = { alsoAttach = it })
+                    Text(
+                        "Ajouter aussi l'email à la fiche de ce contact",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "⚠️ Vérifie qu'il s'agit bien de la même personne : rien n'est utilisé ni modifié sans ta validation.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selected?.let { onValidate(it, alsoAttach) } },
+                enabled = selected != null
+            ) { Text("Valider") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annuler") }
+        }
+    )
 }

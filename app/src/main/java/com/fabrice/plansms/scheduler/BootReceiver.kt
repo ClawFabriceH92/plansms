@@ -57,5 +57,8 @@ class BootReceiver : BroadcastReceiver() {
             }
             AppLogger.i("BootReceiver", "Rattrapage : $caughtUp envoyé(s), $rescheduled replanifié(s)")
         }
+
+        // Réarme le rappel 15h des RDV du lendemain (jours ouvrés)
+        RdvReminder.schedule(context)
     }
 }

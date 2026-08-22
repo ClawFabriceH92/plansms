@@ -37,6 +37,7 @@ data class PlanSmsUiState(
     val callLogLoaded: Boolean = false,
     val tomorrowRdv: List<com.fabrice.plansms.data.TomorrowRdv>? = null,  // null = pas encore chargé
     val tomorrowRdvNoEmail: Int = 0,
+    val tomorrowRdvTarget: Long = 0,   // minuit du jour cible (demain, ou lundi si vendredi/week-end)
     val bulkSending: Boolean = false,
     val bulkProgress: String = "",      // "2/5" pendant un envoi groupé
     val bulkReport: String = "",        // rapport final "4 envoyés · 1 échec"
@@ -130,7 +131,8 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
             }
             _state.value = _state.value.copy(
                 tomorrowRdv = result.withEmail,
-                tomorrowRdvNoEmail = result.withoutEmailCount
+                tomorrowRdvNoEmail = result.withoutEmailCount,
+                tomorrowRdvTarget = result.targetStart
             )
         }
     }

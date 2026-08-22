@@ -60,6 +60,10 @@
         </receiver>
 
         <receiver
+            android:name=".scheduler.RdvReminderReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".scheduler.UpdateReceiver"
             android:exported="true">
             <intent-filter>

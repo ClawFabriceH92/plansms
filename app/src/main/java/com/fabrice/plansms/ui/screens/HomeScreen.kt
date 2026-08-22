@@ -60,7 +60,7 @@ fun HomeScreen(
             onClick = onConfirmRdv,
             modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 10.dp)
         ) {
-            Text("📅 Confirmer les RDV de demain")
+            Text("📅 Confirmer les prochains RDV (demain · lundi si vendredi)")
         }
         if (state.messages.isEmpty()) {
             EmptyState(onNew)

@@ -123,7 +123,25 @@ fun SettingsScreen(
                         showCalendars = true
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Voir les calendriers") }
+                ) { Text("Voir / masquer les calendriers") }
+                Spacer(Modifier.height(10.dp))
+                var rdvReminder by remember {
+                    mutableStateOf(com.fabrice.plansms.data.CalendarPrefs.reminderEnabled(context))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Rappel à 15h (jours ouvrés)", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Notification à 15h s'il y a des RDV le lendemain avec participant — le vendredi pour lundi. Jamais le week-end.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Switch(checked = rdvReminder, onCheckedChange = {
+                        rdvReminder = it
+                        com.fabrice.plansms.data.CalendarPrefs.setReminderEnabled(context, it)
+                        com.fabrice.plansms.scheduler.RdvReminder.schedule(context)
+                    })
+                }
             }
         }
 
