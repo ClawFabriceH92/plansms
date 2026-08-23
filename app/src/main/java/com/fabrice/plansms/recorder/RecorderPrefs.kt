@@ -8,6 +8,7 @@ object RecorderPrefs {
     private const val KEY_PROMPT_ON_CALL = "prompt_on_call"
     private const val KEY_SOURCE = "audio_source"
     private const val KEY_LOCK = "lock_recordings"
+    private const val KEY_OVERLAY = "overlay_button"
 
     /** Source audio : MIC (défaut) ou VOICE_RECOGNITION (souvent plus fidèle, sans traitement). */
     const val SOURCE_MIC = "MIC"
@@ -20,6 +21,13 @@ object RecorderPrefs {
 
     fun setPromptOnCall(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean(KEY_PROMPT_ON_CALL, on).apply()
+    }
+
+    /** Bouton flottant par-dessus l'écran d'appel. Désactivé par défaut. */
+    fun overlayButton(context: Context): Boolean = prefs(context).getBoolean(KEY_OVERLAY, false)
+
+    fun setOverlayButton(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_OVERLAY, on).apply()
     }
 
     /** Exiger empreinte / PIN pour ouvrir l'onglet Audio. */
