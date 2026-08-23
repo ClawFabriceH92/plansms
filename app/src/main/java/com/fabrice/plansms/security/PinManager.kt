@@ -9,6 +9,7 @@ object PinManager {
     private const val PREFS = "plansms_pin"
     private const val KEY_HASH = "pin_hash"
     private const val KEY_ENABLED = "pin_enabled"
+    private const val KEY_BIOMETRIC = "biometric_enabled"
     private const val DEFAULT_PIN = "0000"
 
     private fun prefs(context: Context): SharedPreferences =
@@ -25,6 +26,13 @@ object PinManager {
 
     fun disable(context: Context) {
         prefs(context).edit().putBoolean(KEY_ENABLED, false).remove(KEY_HASH).apply()
+    }
+
+    /** Déverrouillage par empreinte/visage en complément du PIN. */
+    fun isBiometricEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_BIOMETRIC, false)
+
+    fun setBiometricEnabled(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BIOMETRIC, on).apply()
     }
 
     fun verify(context: Context, pin: String): Boolean {

@@ -27,6 +27,17 @@ class SmsRepository(private val context: Context) {
 
     suspend fun renameRecording(r: VoiceRecording, label: String) = recordingDao.update(r.copy(label = label))
 
+    /** (Ré)envoie un enregistrement vers la destination configurée. */
+    suspend fun exportRecording(r: VoiceRecording): String {
+        val res = com.fabrice.plansms.export.RecordingExporter.export(
+            context, java.io.File(r.filePath), r.label
+        )
+        recordingDao.update(
+            r.copy(exportStatus = if (res.ok) "OK" else "ERREUR", exportInfo = res.message)
+        )
+        return res.message
+    }
+
     /** Supprime la fiche ET le fichier audio. */
     suspend fun deleteRecording(r: VoiceRecording) {
         try { java.io.File(r.filePath).delete() } catch (_: Exception) {}

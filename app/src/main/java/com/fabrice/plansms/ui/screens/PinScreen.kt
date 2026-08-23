@@ -32,8 +32,21 @@ import com.fabrice.plansms.ui.theme.Mint
 /** Écran de verrouillage PIN (4 chiffres). */
 @Composable
 fun PinScreen(vm: PlanSmsViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    val bioEnabled = com.fabrice.plansms.security.PinManager.isBiometricEnabled(context) &&
+        com.fabrice.plansms.security.BiometricAuth.isAvailable(context)
+
+    fun askBiometric() {
+        com.fabrice.plansms.security.BiometricAuth.authenticate(
+            context, "PlanSMS", "Empreinte ou reconnaissance faciale", "Utiliser le PIN"
+        ) { ok, _ -> if (ok) vm.unlockBiometric() }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(bioEnabled) {
+        if (bioEnabled) askBiometric()
+    }
 
     fun onDigit(d: String) {
         if (pin.length >= 4) return
@@ -74,6 +87,20 @@ fun PinScreen(vm: PlanSmsViewModel) {
             if (error) {
                 Spacer(Modifier.height(10.dp))
                 Text("PIN incorrect", color = MaterialTheme.colorScheme.error)
+            }
+            if (bioEnabled) {
+                Spacer(Modifier.height(14.dp))
+                Surface(
+                    modifier = Modifier.clickable { askBiometric() },
+                    shape = RoundedCornerShape(16.dp),
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        "👆 Empreinte / visage",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                    )
+                }
             }
             Spacer(Modifier.height(26.dp))
             // Pavé numérique

@@ -59,6 +59,7 @@ fun SettingsScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var showAutoReply by remember { mutableStateOf(false) }
     var showTemplates by remember { mutableStateOf(false) }
+    var showStorage by remember { mutableStateOf(false) }
     var showCalendars by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var autoUpdate by remember { mutableStateOf(vm.isAutoUpdateEnabled()) }
@@ -70,6 +71,11 @@ fun SettingsScreen(
 
     if (showTemplates) {
         TemplatesScreen(vm, onBack = { showTemplates = false }, modifier = modifier)
+        return
+    }
+
+    if (showStorage) {
+        StorageScreen(onBack = { showStorage = false }, modifier = modifier)
         return
     }
 
@@ -222,6 +228,42 @@ fun SettingsScreen(
                         if (!it) com.fabrice.plansms.recorder.CallPromptReceiver.cancel(context)
                     })
                 }
+                Spacer(Modifier.height(10.dp))
+                var lockAudio by remember {
+                    mutableStateOf(com.fabrice.plansms.recorder.RecorderPrefs.lockRecordings(context))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Protéger l'onglet Audio", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Empreinte / visage (ou PIN) exigé pour ouvrir la liste des enregistrements.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Switch(checked = lockAudio, onCheckedChange = {
+                        lockAudio = it
+                        com.fabrice.plansms.recorder.RecorderPrefs.setLockRecordings(context, it)
+                    })
+                }
+                if (lockAudio &&
+                    !com.fabrice.plansms.security.BiometricAuth.isAvailable(context) &&
+                    !state.pinEnabled
+                ) {
+                    Text(
+                        "⚠️ Aucune biométrie configurée et PIN désactivé : active le PIN ci-dessous, sinon l'onglet restera inaccessible.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Destination actuelle : " + com.fabrice.plansms.data.StoragePrefs.label(context),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(onClick = { showStorage = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Choisir le stockage (dossier, cloud, FTP, email)")
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "⚠️ Préviens toujours ton interlocuteur : enregistrer à son insu est sanctionné (art. 226-1 du Code pénal).",
@@ -245,6 +287,29 @@ fun SettingsScreen(
                         onCheckedChange = { on ->
                             if (on) showPinDialog = true
                             else vm.disablePin()
+                        }
+                    )
+                }
+                val bioAvailable = com.fabrice.plansms.security.BiometricAuth.isAvailable(context)
+                Spacer(Modifier.height(8.dp))
+                var bio by remember {
+                    mutableStateOf(com.fabrice.plansms.security.PinManager.isBiometricEnabled(context))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Empreinte / visage", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (bioAvailable) "Déverrouiller sans saisir le PIN."
+                            else "Aucune empreinte ou reconnaissance faciale configurée sur ce téléphone.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Switch(
+                        checked = bio && bioAvailable,
+                        enabled = bioAvailable,
+                        onCheckedChange = {
+                            bio = it
+                            com.fabrice.plansms.security.PinManager.setBiometricEnabled(context, it)
                         }
                     )
                 }

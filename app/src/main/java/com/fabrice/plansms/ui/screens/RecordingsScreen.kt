@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -54,7 +56,11 @@ import com.fabrice.plansms.recorder.RecorderPrefs
 import com.fabrice.plansms.recorder.RecorderState
 import com.fabrice.plansms.recorder.RecordingService
 import com.fabrice.plansms.ui.PlanSmsViewModel
+import com.fabrice.plansms.data.StoragePrefs
+import com.fabrice.plansms.security.BiometricAuth
+import com.fabrice.plansms.security.PinManager
 import com.fabrice.plansms.ui.theme.Danger
+import com.fabrice.plansms.ui.theme.Success
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -66,6 +72,85 @@ import java.util.Locale
  */
 @Composable
 fun RecordingsTab(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var unlocked by remember { mutableStateOf(!RecorderPrefs.lockRecordings(context)) }
+    if (unlocked) {
+        RecordingsContent(vm, modifier)
+    } else {
+        RecordingsLockPanel(onUnlocked = { unlocked = true }, modifier = modifier)
+    }
+}
+
+/** Écran de déverrouillage de l'onglet Audio (empreinte / visage, ou PIN de l'app). */
+@Composable
+private fun RecordingsLockPanel(onUnlocked: () -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var lockError by remember { mutableStateOf("") }
+    var pinInput by remember { mutableStateOf("") }
+
+    Column(modifier = modifier.fillMaxSize().padding(24.dp)) {
+        Spacer(Modifier.height(40.dp))
+        Text("🔒", style = MaterialTheme.typography.displaySmall)
+        Spacer(Modifier.height(8.dp))
+        Text("Enregistrements protégés", style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(6.dp))
+        Text(
+                "Authentifie-toi pour ouvrir la liste.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(16.dp))
+        if (BiometricAuth.isAvailable(context)) {
+                Button(
+                    onClick = {
+                        BiometricAuth.authenticate(
+                            context,
+                            "Enregistrements PlanSMS",
+                            "Empreinte ou reconnaissance faciale",
+                            "Utiliser le PIN"
+                        ) { ok, msg ->
+                            if (ok) { lockError = ""; onUnlocked() } else if (msg.isNotEmpty()) lockError = msg
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Déverrouiller avec l'empreinte") }
+                Spacer(Modifier.height(12.dp))
+        }
+        OutlinedTextField(
+                value = pinInput,
+                onValueChange = { value ->
+                    pinInput = value.filter(Char::isDigit).take(4)
+                    if (pinInput.length == 4) {
+                        if (PinManager.verify(context, pinInput)) {
+                            lockError = ""
+                            onUnlocked()
+                        } else {
+                            lockError = "PIN incorrect"
+                        }
+                        pinInput = ""
+                    }
+                },
+                label = { Text("PIN de l'app (4 chiffres)") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+        )
+        if (!PinManager.isEnabled(context)) {
+                Text(
+                    "Aucun PIN défini : le PIN par défaut est 0000. Configure-le dans Réglages → Sécurité.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+        }
+        if (lockError.isNotEmpty()) {
+        Spacer(Modifier.height(8.dp))
+        Text(lockError, color = Danger, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun RecordingsContent(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
     val state by vm.state.collectAsStateWithLifecycle()
     val isRecording by RecorderState.isRecording.collectAsStateWithLifecycle()
     val elapsed by RecorderState.elapsedMs.collectAsStateWithLifecycle()
@@ -184,7 +269,7 @@ fun RecordingsTab(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
 
         Spacer(Modifier.height(12.dp))
         Text(
-            "${state.recordings.size} enregistrement(s)",
+            "${state.recordings.size} enregistrement(s) · destination : ${StoragePrefs.label(context)}",
             style = MaterialTheme.typography.labelLarge
         )
         Spacer(Modifier.height(6.dp))
@@ -204,6 +289,7 @@ fun RecordingsTab(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
                         onPlay = { togglePlay(rec) },
                         onRename = { renaming = rec },
                         onShare = { shareRecording(context, rec) },
+                        onExport = { vm.exportRecording(rec) },
                         onDelete = { deleting = rec }
                     )
                 }
@@ -291,6 +377,7 @@ private fun RecordingCard(
     onPlay: () -> Unit,
     onRename: () -> Unit,
     onShare: () -> Unit,
+    onExport: () -> Unit,
     onDelete: () -> Unit
 ) {
     val fmt = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
@@ -308,6 +395,13 @@ private fun RecordingCard(
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (rec.exportStatus.isNotEmpty()) {
+                Text(
+                    (if (rec.exportStatus == "OK") "☁️ " else "⚠️ ") + rec.exportInfo,
+                    fontSize = 12.sp,
+                    color = if (rec.exportStatus == "OK") Success else Danger
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(onClick = onPlay) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null)
@@ -320,6 +414,9 @@ private fun RecordingCard(
                 }
                 IconButton(onClick = onShare) {
                     Icon(Icons.Filled.Share, contentDescription = "Partager", tint = MaterialTheme.colorScheme.primary)
+                }
+                IconButton(onClick = onExport) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Renvoyer vers la destination", tint = MaterialTheme.colorScheme.primary)
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Filled.Delete, contentDescription = "Supprimer", tint = Danger)
