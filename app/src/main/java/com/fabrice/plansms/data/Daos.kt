@@ -86,6 +86,21 @@ interface GroupMemberDao {
 }
 
 @Dao
+interface VoiceRecordingDao {
+    @Query("SELECT * FROM voice_recordings ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<VoiceRecording>>
+
+    @Insert
+    suspend fun insert(r: VoiceRecording): Long
+
+    @Update
+    suspend fun update(r: VoiceRecording)
+
+    @Delete
+    suspend fun delete(r: VoiceRecording)
+}
+
+@Dao
 interface AutoReplyRuleDao {
     @Query("SELECT * FROM auto_reply_rules WHERE id = 1")
     fun observe(): Flow<AutoReplyRule?>

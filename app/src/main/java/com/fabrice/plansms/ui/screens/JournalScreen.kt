@@ -138,9 +138,12 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
         TabRow(selectedTabIndex = tab) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("📞 Appels") })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("📨 Envois") })
+            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("🎙 Audio") })
         }
 
-        if (tab == 0) {
+        if (tab == 2) {
+            RecordingsTab(vm)
+        } else if (tab == 0) {
             CallLogTab(
                 hasPermission = hasPermission,
                 onAskPermission = { permissionLauncher.launch(Manifest.permission.READ_CALL_LOG) },

@@ -38,6 +38,7 @@ data class PlanSmsUiState(
     val tomorrowRdv: List<com.fabrice.plansms.data.TomorrowRdv>? = null,  // null = pas encore chargé
     val tomorrowRdvNoEmail: Int = 0,
     val tomorrowRdvTarget: Long = 0,   // minuit du jour cible (demain, ou lundi si vendredi/week-end)
+    val recordings: List<com.fabrice.plansms.data.VoiceRecording> = emptyList(),
     val bulkSending: Boolean = false,
     val bulkProgress: String = "",      // "2/5" pendant un envoi groupé
     val bulkReport: String = "",        // rapport final "4 envoyés · 1 échec"
@@ -87,6 +88,11 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.observeAutoReply().stateIn(viewModelScope, SharingStarted.Eagerly, null).collect {
                 _state.value = _state.value.copy(autoReply = it)
+            }
+        }
+        viewModelScope.launch {
+            repo.observeRecordings().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList()).collect {
+                _state.value = _state.value.copy(recordings = it)
             }
         }
         viewModelScope.launch {
@@ -192,6 +198,13 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(bulkSending = false, bulkReport = report, bulkProgress = "")
         }
     }
+
+    // --- Enregistrements vocaux ---
+    fun renameRecording(r: com.fabrice.plansms.data.VoiceRecording, label: String) =
+        viewModelScope.launch { repo.renameRecording(r, label.trim()) }
+
+    fun deleteRecording(r: com.fabrice.plansms.data.VoiceRecording) =
+        viewModelScope.launch { repo.deleteRecording(r) }
 
     fun clearBulkReport() {
         _state.value = _state.value.copy(bulkReport = "", bulkProgress = "")
