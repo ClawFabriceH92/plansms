@@ -15,6 +15,7 @@ class SmsRepository(private val context: Context) {
     private val groupDao = db.contactGroupDao()
     private val memberDao = db.groupMemberDao()
     private val autoReplyDao = db.autoReplyRuleDao()
+    private val recordingDao = db.voiceRecordingDao()
 
     fun observeMessages(): Flow<List<ScheduledMessage>> = msgDao.observeAll()
     fun observeTemplates(): Flow<List<Template>> = tmplDao.observeAll()
@@ -22,6 +23,15 @@ class SmsRepository(private val context: Context) {
     fun observeGroups(): Flow<List<ContactGroup>> = groupDao.observeAll()
     fun observeMembers(groupId: Long): Flow<List<GroupMember>> = memberDao.observeMembers(groupId)
     fun observeAutoReply(): Flow<AutoReplyRule?> = autoReplyDao.observe()
+    fun observeRecordings(): Flow<List<VoiceRecording>> = recordingDao.observeAll()
+
+    suspend fun renameRecording(r: VoiceRecording, label: String) = recordingDao.update(r.copy(label = label))
+
+    /** Supprime la fiche ET le fichier audio. */
+    suspend fun deleteRecording(r: VoiceRecording) {
+        try { java.io.File(r.filePath).delete() } catch (_: Exception) {}
+        recordingDao.delete(r)
+    }
 
     suspend fun addMessage(msg: ScheduledMessage): Long {
         val id = msgDao.insert(msg)

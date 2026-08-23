@@ -197,6 +197,42 @@ fun SettingsScreen(
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(14.dp)) {
+                Text("Enregistrement audio", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "L'enregistreur est dans Journal → 🎙 Audio. Il capte par le micro : mets l'appel " +
+                        "(téléphone, WhatsApp, Teams, Meet…) en haut-parleur pour enregistrer les deux voix.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                var promptOnCall by remember {
+                    mutableStateOf(com.fabrice.plansms.recorder.RecorderPrefs.promptOnCall(context))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Proposer pendant un appel", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Notification « Enregistrer ? » quand un appel téléphonique démarre. Rien ne se lance sans ton action.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Switch(checked = promptOnCall, onCheckedChange = {
+                        promptOnCall = it
+                        com.fabrice.plansms.recorder.RecorderPrefs.setPromptOnCall(context, it)
+                        if (!it) com.fabrice.plansms.recorder.CallPromptReceiver.cancel(context)
+                    })
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "⚠️ Préviens toujours ton interlocuteur : enregistrer à son insu est sanctionné (art. 226-1 du Code pénal).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
                 Text("Sécurité", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -90,6 +90,22 @@ data class GroupMember(
     val name: String = ""
 )
 
+/**
+ * Enregistrement vocal (dictaphone / appel en haut-parleur).
+ * Le fichier audio est stocké dans le dossier privé de l'app ; seule la fiche est en base.
+ */
+@Entity(tableName = "voice_recordings")
+data class VoiceRecording(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val filePath: String,
+    val label: String = "",          // libellé libre ("Appel M. Dupont", "Réunion Teams"…)
+    val phone: String = "",          // numéro associé si l'enregistrement suit un appel
+    val source: String = "MIC",      // source audio utilisée
+    val durationMs: Long = 0,
+    val sizeBytes: Long = 0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 /** Règle d'auto-réponse (une seule, globale). */
 @Entity(tableName = "auto_reply_rules")
 data class AutoReplyRule(
