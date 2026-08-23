@@ -182,8 +182,22 @@ class RecordingService : Service() {
         )
         val appContext = applicationContext
         CoroutineScope(Dispatchers.IO).launch {
-            AppDatabase.get(appContext).voiceRecordingDao().insert(recording)
+            val dao = AppDatabase.get(appContext).voiceRecordingDao()
+            val id = dao.insert(recording)
             AppLogger.i("RecordingService", "Enregistrement conservé : ${file.name} (${durationMs / 1000}s)")
+            // Export vers la destination choisie (dossier / FTP / email), si configurée
+            if (com.fabrice.plansms.data.StoragePrefs.destination(appContext) !=
+                com.fabrice.plansms.data.StoragePrefs.DEST_LOCAL
+            ) {
+                val res = com.fabrice.plansms.export.RecordingExporter.export(appContext, file, label)
+                dao.update(
+                    recording.copy(
+                        id = id,
+                        exportStatus = if (res.ok) "OK" else "ERREUR",
+                        exportInfo = res.message
+                    )
+                )
+            }
         }
     }
 

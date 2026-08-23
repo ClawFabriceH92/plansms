@@ -206,6 +206,9 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteRecording(r: com.fabrice.plansms.data.VoiceRecording) =
         viewModelScope.launch { repo.deleteRecording(r) }
 
+    fun exportRecording(r: com.fabrice.plansms.data.VoiceRecording) =
+        viewModelScope.launch { repo.exportRecording(r) }
+
     fun clearBulkReport() {
         _state.value = _state.value.copy(bulkReport = "", bulkProgress = "")
     }
@@ -253,6 +256,11 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
         val ok = com.fabrice.plansms.security.PinManager.verify(getApplication(), pin)
         if (ok) _state.value = _state.value.copy(locked = false)
         return ok
+    }
+
+    /** Déverrouillage réussi par empreinte / visage. */
+    fun unlockBiometric() {
+        _state.value = _state.value.copy(locked = false)
     }
 
     fun lock() {

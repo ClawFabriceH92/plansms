@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [ScheduledMessage::class, Template::class, SendLog::class, ContactGroup::class, GroupMember::class, AutoReplyRule::class, VoiceRecording::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,7 +29,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plansms.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build().also { instance = it }
             }
 
@@ -56,6 +56,13 @@ abstract class AppDatabase : RoomDatabase() {
                         "sizeBytes INTEGER NOT NULL, " +
                         "createdAt INTEGER NOT NULL)"
                 )
+            }
+        }
+
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE voice_recordings ADD COLUMN exportStatus TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE voice_recordings ADD COLUMN exportInfo TEXT NOT NULL DEFAULT ''")
             }
         }
     }

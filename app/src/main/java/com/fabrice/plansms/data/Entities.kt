@@ -103,7 +103,9 @@ data class VoiceRecording(
     val source: String = "MIC",      // source audio utilisée
     val durationMs: Long = 0,
     val sizeBytes: Long = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val exportStatus: String = "",   // "" (local) / OK / ERREUR
+    val exportInfo: String = ""      // destination atteinte, ou motif de l'échec
 )
 
 /** Règle d'auto-réponse (une seule, globale). */

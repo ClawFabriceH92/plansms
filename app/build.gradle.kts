@@ -13,8 +13,8 @@ android {
         applicationId = "com.fabrice.plansms"
         minSdk = 29
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.8.0"
+        versionCode = 17
+        versionName = "0.9.0"
     }
 
     // Signature CI : la release est signée avec le keystore fourni via variables
@@ -60,6 +60,13 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/NOTICE"
+            excludes += "META-INF/NOTICE.md"
+            excludes += "META-INF/NOTICE.txt"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/LICENSE.md"
+            excludes += "META-INF/LICENSE.txt"
+            excludes += "META-INF/DEPENDENCIES"
         }
     }
 }
@@ -83,6 +90,11 @@ dependencies {
 
     // WorkManager (scheduling fiable)
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Export des enregistrements : FTP/FTPS + envoi email (SMTP)
+    implementation("commons-net:commons-net:3.9.0")
+    implementation("com.sun.mail:android-mail:1.6.7")
+    implementation("com.sun.mail:android-activation:1.6.7")
 
     // Tests
     testImplementation("junit:junit:4.13.2")

@@ -7,6 +7,7 @@ object RecorderPrefs {
     private const val PREFS = "plansms_recorder"
     private const val KEY_PROMPT_ON_CALL = "prompt_on_call"
     private const val KEY_SOURCE = "audio_source"
+    private const val KEY_LOCK = "lock_recordings"
 
     /** Source audio : MIC (défaut) ou VOICE_RECOGNITION (souvent plus fidèle, sans traitement). */
     const val SOURCE_MIC = "MIC"
@@ -19,6 +20,13 @@ object RecorderPrefs {
 
     fun setPromptOnCall(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean(KEY_PROMPT_ON_CALL, on).apply()
+    }
+
+    /** Exiger empreinte / PIN pour ouvrir l'onglet Audio. */
+    fun lockRecordings(context: Context): Boolean = prefs(context).getBoolean(KEY_LOCK, false)
+
+    fun setLockRecordings(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_LOCK, on).apply()
     }
 
     fun audioSource(context: Context): String =
