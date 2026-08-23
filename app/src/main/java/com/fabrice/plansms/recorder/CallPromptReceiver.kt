@@ -28,14 +28,18 @@ class CallPromptReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
-        if (!RecorderPrefs.promptOnCall(context)) return
+        if (!RecorderPrefs.promptOnCall(context) && !RecorderPrefs.overlayButton(context)) return
 
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
         val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER).orEmpty()
 
         when (state) {
-            TelephonyManager.EXTRA_STATE_OFFHOOK -> showPrompt(context, number)
+            TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                if (RecorderPrefs.overlayButton(context)) CallOverlay.show(context)
+                if (RecorderPrefs.promptOnCall(context)) showPrompt(context, number)
+            }
             TelephonyManager.EXTRA_STATE_IDLE -> {
+                CallOverlay.hide()
                 cancel(context)
                 if (RecorderState.isRecording.value) RecordingService.stop(context)
             }

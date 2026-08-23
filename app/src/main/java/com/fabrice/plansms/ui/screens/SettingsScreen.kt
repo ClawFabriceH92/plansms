@@ -1,8 +1,13 @@
 package com.fabrice.plansms.ui.screens
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +68,15 @@ fun SettingsScreen(
     var showCalendars by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var autoUpdate by remember { mutableStateOf(vm.isAutoUpdateEnabled()) }
+    var phoneStateGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val phoneStateLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> phoneStateGranted = granted }
 
     if (showAutoReply) {
         AutoReplyScreen(vm, onBack = { showAutoReply = false })
@@ -211,14 +225,59 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(8.dp))
+                var overlayButton by remember {
+                    mutableStateOf(com.fabrice.plansms.recorder.RecorderPrefs.overlayButton(context))
+                }
+                var overlayAllowed by remember {
+                    mutableStateOf(com.fabrice.plansms.recorder.CallOverlay.isAllowed(context))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Bouton flottant pendant l'appel", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Un bouton « ⏺ Enregistrer » s'affiche par-dessus l'écran d'appel (téléphone, WhatsApp, Teams…). Déplaçable au doigt.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Switch(checked = overlayButton, onCheckedChange = {
+                        overlayButton = it
+                        com.fabrice.plansms.recorder.RecorderPrefs.setOverlayButton(context, it)
+                        if (it && !phoneStateGranted) {
+                            phoneStateLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                        }
+                    })
+                }
+                if (overlayButton && !overlayAllowed) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "⚠️ Autorisation « Afficher par-dessus les autres applications » requise.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:" + context.packageName)
+                                )
+                            )
+                            overlayAllowed = com.fabrice.plansms.recorder.CallOverlay.isAllowed(context)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Autoriser l'affichage par-dessus") }
+                }
+
+                Spacer(Modifier.height(10.dp))
                 var promptOnCall by remember {
                     mutableStateOf(com.fabrice.plansms.recorder.RecorderPrefs.promptOnCall(context))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Proposer pendant un appel", style = MaterialTheme.typography.titleMedium)
+                        Text("Notification pendant un appel", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Notification « Enregistrer ? » quand un appel téléphonique démarre. Rien ne se lance sans ton action.",
+                            "Notification « Enregistrer ? » au décrochage — à dérouler depuis le haut de l'écran. Rien ne se lance sans ton action.",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -226,7 +285,23 @@ fun SettingsScreen(
                         promptOnCall = it
                         com.fabrice.plansms.recorder.RecorderPrefs.setPromptOnCall(context, it)
                         if (!it) com.fabrice.plansms.recorder.CallPromptReceiver.cancel(context)
+                        if (it && !phoneStateGranted) {
+                            phoneStateLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                        }
                     })
+                }
+                if ((promptOnCall || overlayButton) && !phoneStateGranted) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "⚠️ Autorisation « Téléphone » requise pour détecter les appels.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedButton(
+                        onClick = { phoneStateLauncher.launch(Manifest.permission.READ_PHONE_STATE) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Autoriser l'accès au téléphone") }
                 }
                 Spacer(Modifier.height(10.dp))
                 var lockAudio by remember {
