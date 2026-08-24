@@ -101,6 +101,21 @@ interface VoiceRecordingDao {
 }
 
 @Dao
+interface InboundMessageDao {
+    @Query("SELECT * FROM inbound_messages ORDER BY receivedAt DESC LIMIT 500")
+    suspend fun recent(): List<InboundMessage>
+
+    @Query("SELECT * FROM inbound_messages WHERE matchKey = :key ORDER BY receivedAt DESC LIMIT 10")
+    suspend fun forKey(key: String): List<InboundMessage>
+
+    @Insert
+    suspend fun insert(m: InboundMessage)
+
+    @Query("DELETE FROM inbound_messages WHERE receivedAt < :before")
+    suspend fun purge(before: Long)
+}
+
+@Dao
 interface AutoReplyRuleDao {
     @Query("SELECT * FROM auto_reply_rules WHERE id = 1")
     fun observe(): Flow<AutoReplyRule?>
