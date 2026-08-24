@@ -13,10 +13,14 @@ data class CallEntry(
     val type: Int,             // CallLog.Calls.INCOMING_TYPE / OUTGOING_TYPE / MISSED_TYPE / REJECTED_TYPE
     val date: Long,            // epoch millis de l'appel (le plus récent si regroupé)
     val count: Int = 1,        // nombre d'appels regroupés pour ce numéro
-    val smsSinceAt: Long = 0,  // date du SMS reçu de ce numéro APRÈS l'appel (0 = aucun)
-    val smsSincePreview: String = ""
+    val lastSmsAt: Long = 0,   // date du dernier SMS reçu de ce numéro (0 = aucun)
+    val lastSmsPreview: String = ""
 ) {
-    val hasRepliedBySms: Boolean get() = smsSinceAt > 0
+    /** Le correspondant a écrit APRÈS son dernier appel → ne pas le relancer. */
+    val hasRepliedBySms: Boolean get() = lastSmsAt > date
+
+    /** Un SMS existe, mais il est antérieur au dernier appel (simple information). */
+    val hasEarlierSms: Boolean get() = lastSmsAt in 1 until date
     val isMissed: Boolean get() = type == CallLog.Calls.MISSED_TYPE || type == CallLog.Calls.REJECTED_TYPE
     val isIncoming: Boolean get() = type == CallLog.Calls.INCOMING_TYPE
     val isOutgoing: Boolean get() = type == CallLog.Calls.OUTGOING_TYPE
@@ -150,8 +154,7 @@ object CallLogRepository {
     /** Résultat d'une lecture du journal enrichie des réponses SMS. */
     data class CallLogScan(
         val calls: List<CallEntry>,
-        val smsScanned: Int,        // nombre de SMS reçus analysés (-1 = permission absente)
-        val repliesFound: Int
+        val smsScanned: Int         // nombre de SMS reçus analysés (-1 = permission absente)
     )
 
     /**
@@ -199,21 +202,99 @@ object CallLogRepository {
         return out to scanned
     }
 
-    /** Marque les appels dont le correspondant a envoyé un SMS APRÈS l'appel. */
+    /**
+     * Attache à chaque appel la date du dernier SMS reçu de ce numéro.
+     * La comparaison « SMS postérieur à l'appel ? » est faite à l'affichage, APRÈS
+     * le regroupement par numéro : sinon le marquage porté par un vieil appel serait
+     * perdu au profit du plus récent, et l'inverse produirait des alertes fantômes.
+     */
     fun markSmsReplies(context: Context, calls: List<CallEntry>): CallLogScan {
-        if (calls.isEmpty()) return CallLogScan(calls, if (hasSmsReadPermission(context)) 0 else -1, 0)
+        if (calls.isEmpty()) return CallLogScan(calls, if (hasSmsReadPermission(context)) 0 else -1)
         val (inbox, scanned) = inboundSmsByNumber(context, calls.minOf { it.date })
-        if (inbox.isEmpty()) return CallLogScan(calls, scanned, 0)
-        var found = 0
+        if (inbox.isEmpty()) return CallLogScan(calls, scanned)
         val marked = calls.map { call ->
             val hit = inbox[matchKey(call.number)]
-            if (hit != null && hit.first > call.date) {
-                found++
-                call.copy(smsSinceAt = hit.first, smsSincePreview = hit.second.take(70))
-            } else {
-                call
-            }
+            if (hit != null) call.copy(lastSmsAt = hit.first, lastSmsPreview = hit.second.take(70)) else call
         }
-        return CallLogScan(marked, scanned, found)
+        return CallLogScan(marked, scanned)
+    }
+
+    /** Rapport de diagnostic pour un numéro : ce que l'app voit réellement. */
+    fun diagnosticReport(context: Context, rawNumber: String): String {
+        val fmt = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.FRANCE)
+        val key = matchKey(rawNumber)
+        val sb = StringBuilder()
+        sb.append("=== Diagnostic PlanSMS ===\n")
+        sb.append("Numéro saisi : ").append(rawNumber).append("\n")
+        sb.append("Clé de rapprochement (9 derniers chiffres) : ").append(key).append("\n")
+        sb.append("Nature : ").append(kindLabel(rawNumber)).append("\n")
+        sb.append("Permission journal d'appels : ").append(if (hasPermission(context)) "OUI" else "NON").append("\n")
+        sb.append("Permission lecture SMS : ").append(if (hasSmsReadPermission(context)) "OUI" else "NON").append("\n\n")
+
+        if (key.isEmpty()) return sb.append("Numéro vide ou invalide.").toString()
+
+        sb.append("--- Appels de ce numéro ---\n")
+        val calls = readRecentCalls(context, limit = 500).filter { matchKey(it.number) == key }
+        if (calls.isEmpty()) sb.append("(aucun appel trouvé)\n")
+        calls.take(10).forEach { c ->
+            val type = when {
+                c.isMissed -> "manqué"
+                c.isIncoming -> "reçu"
+                c.isOutgoing -> "émis"
+                else -> "autre"
+            }
+            sb.append(fmt.format(java.util.Date(c.date))).append("  ").append(type)
+                .append("  [brut: ").append(c.number).append("]\n")
+        }
+
+        sb.append("\n--- SMS REÇUS de ce numéro ---\n")
+        var smsCount = 0
+        try {
+            val cursor = context.contentResolver.query(
+                android.provider.Telephony.Sms.CONTENT_URI,
+                arrayOf(
+                    android.provider.Telephony.Sms.ADDRESS,
+                    android.provider.Telephony.Sms.DATE,
+                    android.provider.Telephony.Sms.BODY,
+                    android.provider.Telephony.Sms.TYPE
+                ),
+                null, null,
+                android.provider.Telephony.Sms.DATE + " DESC"
+            )
+            cursor?.use {
+                while (it.moveToNext() && smsCount < 10) {
+                    val address = it.getString(0) ?: continue
+                    if (matchKey(address) != key) continue
+                    smsCount++
+                    val typeLabel = if (it.getInt(3) == android.provider.Telephony.Sms.MESSAGE_TYPE_INBOX)
+                        "REÇU" else "envoyé/autre (type ${it.getInt(3)})"
+                    sb.append(fmt.format(java.util.Date(it.getLong(1)))).append("  ").append(typeLabel)
+                        .append("  [brut: ").append(address).append("]\n")
+                        .append("    « ").append((it.getString(2) ?: "").take(50)).append(" »\n")
+                }
+            }
+        } catch (e: Exception) {
+            sb.append("Lecture impossible : ").append(e.message).append("\n")
+        }
+        if (smsCount == 0) {
+            sb.append("(aucun message trouvé pour ce numéro dans la base SMS)\n")
+            sb.append("→ probablement un message RCS/chat : invisible pour toute app tierce.\n")
+        }
+
+        sb.append("\n--- Verdict ---\n")
+        val lastCall = calls.maxOfOrNull { it.date } ?: 0L
+        val (inbox, scanned) = inboundSmsByNumber(context, 0L)
+        val lastSms = inbox[key]?.first ?: 0L
+        sb.append("Total SMS reçus analysés : ").append(scanned).append("\n")
+        sb.append("Dernier appel : ").append(if (lastCall > 0) fmt.format(java.util.Date(lastCall)) else "aucun").append("\n")
+        sb.append("Dernier SMS  : ").append(if (lastSms > 0) fmt.format(java.util.Date(lastSms)) else "aucun").append("\n")
+        sb.append(
+            when {
+                lastSms == 0L -> "→ aucun SMS de ce numéro : pas d'alerte possible."
+                lastSms > lastCall -> "→ SMS POSTÉRIEUR à l'appel : l'alerte doit s'afficher."
+                else -> "→ SMS antérieur au dernier appel : affiché en information, sans alerte."
+            }
+        )
+        return sb.toString()
     }
 }

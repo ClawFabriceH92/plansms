@@ -122,6 +122,7 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
         if (mobilesOnly) allGrouped.filter { CallLogRepository.canReceiveSms(it.number) } else allGrouped
     }
     val hiddenCount = allGrouped.size - grouped.size
+    val repliesShown = allGrouped.count { it.hasRepliedBySms }
     val selectedEntries = remember(grouped, selectedKeys, state.callLog) {
         // On repart de la liste complète regroupée pour garder la sélection même si le filtre change
         CallLogRepository.groupByNumber(state.callLog)
@@ -210,7 +211,7 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
                 smsPermission = hasSmsPermission,
                 onAskSmsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS)) },
                 smsScanned = state.smsScanned,
-                smsRepliesFound = state.smsRepliesFound,
+                smsRepliesFound = repliesShown,
                 onShowSmsInfo = { showSmsInfo = true },
                 selectedKeys = selectedKeys,
                 onToggle = { entry ->
@@ -441,18 +442,24 @@ private fun CallCard(call: CallEntry, checked: Boolean, onToggle: () -> Unit) {
                 if (replied) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "📩 A DÉJÀ RÉPONDU PAR SMS — ${smsFmt.format(Date(call.smsSinceAt))}",
+                        "📩 A DÉJÀ RÉPONDU PAR SMS — ${smsFmt.format(Date(call.lastSmsAt))}",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Amber
                     )
-                    if (call.smsSincePreview.isNotBlank()) {
+                    if (call.lastSmsPreview.isNotBlank()) {
                         Text(
-                            "« ${call.smsSincePreview} »",
+                            "« ${call.lastSmsPreview} »",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                } else if (call.hasEarlierSms) {
+                    Text(
+                        "✉️ dernier SMS reçu le ${smsFmt.format(Date(call.lastSmsAt))} (avant l'appel)",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             Text(
