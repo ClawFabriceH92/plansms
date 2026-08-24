@@ -202,8 +202,20 @@ object CallLogRepository {
         if (!hasSmsReadPermission(context)) return emptyMap<String, Pair<Long, String>>() to -1
         val out = HashMap<String, Pair<Long, String>>()
         var scanned = 0
+
+        fun record(address: String?, date: Long, body: String) {
+            scanned++
+            val addr = address?.trim() ?: return
+            if (addr.isBlank()) return
+            val key = matchKey(addr)
+            if (key.isEmpty()) return
+            val previous = out[key]
+            if (previous == null || date > previous.first) out[key] = date to body
+        }
+
+        // SMS reçus
         try {
-            val cursor = context.contentResolver.query(
+            context.contentResolver.query(
                 android.provider.Telephony.Sms.CONTENT_URI,
                 arrayOf(
                     android.provider.Telephony.Sms.ADDRESS,
@@ -217,39 +229,64 @@ object CallLogRepository {
                     since.toString()
                 ),
                 android.provider.Telephony.Sms.DATE + " DESC"
-            )
-            cursor?.use {
-                while (it.moveToNext()) {
-                    scanned++
-                    val address = it.getString(0)?.trim() ?: continue
-                    if (address.isBlank()) continue
-                    val key = matchKey(address)
-                    if (key.isEmpty()) continue
-                    val date = it.getLong(1)
-                    val previous = out[key]
-                    if (previous == null || date > previous.first) {
-                        out[key] = date to (it.getString(2) ?: "")
+            )?.use {
+                while (it.moveToNext()) record(it.getString(0), it.getLong(1), it.getString(2) ?: "")
+            }
+        } catch (_: Exception) {
+        }
+
+        // MMS reçus (la date y est en SECONDES, et l'expéditeur est dans une table à part)
+        try {
+            context.contentResolver.query(
+                android.net.Uri.parse("content://mms/inbox"),
+                arrayOf("_id", "date"),
+                "date > ?",
+                arrayOf((since / 1000).toString()),
+                "date DESC"
+            )?.use { mms ->
+                var handled = 0
+                while (mms.moveToNext() && handled < 300) {
+                    handled++
+                    val id = mms.getLong(0)
+                    val dateMs = mms.getLong(1) * 1000L
+                    context.contentResolver.query(
+                        android.net.Uri.parse("content://mms/" + id + "/addr"),
+                        arrayOf("address", "type"),
+                        "msg_id = ?", arrayOf(id.toString()), null
+                    )?.use { addr ->
+                        while (addr.moveToNext()) {
+                            // type 137 = PduHeaders.FROM : l'expéditeur du message
+                            if (addr.getInt(1) == 137) record(addr.getString(0), dateMs, "(MMS)")
+                        }
                     }
                 }
             }
         } catch (_: Exception) {
-            // provider inaccessible (surcouche constructeur) → 0 SMS lus, l'UI le signale
         }
+
         return out to scanned
     }
 
     /**
-     * Attache à chaque appel la date du dernier SMS reçu de ce numéro.
-     * La comparaison « SMS postérieur à l'appel ? » est faite à l'affichage, APRÈS
-     * le regroupement par numéro : sinon le marquage porté par un vieil appel serait
-     * perdu au profit du plus récent, et l'inverse produirait des alertes fantômes.
+     * Attache à chaque appel la date du dernier message reçu de ce numéro.
+     * [captured] : messages relevés via les notifications (RCS / chat), fusionnés
+     * avec les SMS et MMS lus dans la base Android.
      */
-    fun markSmsReplies(context: Context, calls: List<CallEntry>): CallLogScan {
+    fun markSmsReplies(
+        context: Context,
+        calls: List<CallEntry>,
+        captured: Map<String, Pair<Long, String>> = emptyMap()
+    ): CallLogScan {
         if (calls.isEmpty()) return CallLogScan(calls, if (hasSmsReadPermission(context)) 0 else -1)
         val (inbox, scanned) = inboundSmsByNumber(context, calls.minOf { it.date })
-        if (inbox.isEmpty()) return CallLogScan(calls, scanned)
+        val merged = HashMap(inbox)
+        for ((key, value) in captured) {
+            val previous = merged[key]
+            if (previous == null || value.first > previous.first) merged[key] = value
+        }
+        if (merged.isEmpty()) return CallLogScan(calls, scanned)
         val marked = calls.map { call ->
-            val hit = inbox[matchKey(call.number)]
+            val hit = merged[matchKey(call.number)]
             if (hit != null) call.copy(lastSmsAt = hit.first, lastSmsPreview = hit.second.take(70)) else call
         }
         return CallLogScan(marked, scanned)
@@ -313,8 +350,10 @@ object CallLogRepository {
             sb.append("Lecture impossible : ").append(e.message).append("\n")
         }
         if (smsCount == 0) {
-            sb.append("(aucun message trouvé pour ce numéro dans la base SMS)\n")
-            sb.append("→ probablement un message RCS/chat : invisible pour toute app tierce.\n")
+            sb.append("(aucun message pour ce numéro dans la base SMS/MMS d'Android)\n")
+            sb.append("→ conversation RCS / « chat » : ces messages sont chiffrés de bout en bout\n")
+            sb.append("  et stockés hors de la base SMS. Active « Capture des messages RCS »\n")
+            sb.append("  dans Réglages pour que les PROCHAINS soient détectés.\n")
         }
 
         sb.append("\n--- Verdict ---\n")

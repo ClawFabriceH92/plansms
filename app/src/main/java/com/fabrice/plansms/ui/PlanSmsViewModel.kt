@@ -121,7 +121,15 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val scan = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val raw = CallLogRepository.readRecentCalls(getApplication())
-                CallLogRepository.markSmsReplies(getApplication(), raw)
+                // Messages RCS/chat relevés via les notifications (absents de la base SMS)
+                val captured = com.fabrice.plansms.data.AppDatabase.get(getApplication())
+                    .inboundMessageDao().recent()
+                    .groupBy { it.matchKey }
+                    .mapValues { (_, list) ->
+                        val newest = list.maxByOrNull { it.receivedAt }!!
+                        newest.receivedAt to newest.preview
+                    }
+                CallLogRepository.markSmsReplies(getApplication(), raw, captured)
             }
             _state.value = _state.value.copy(
                 callLog = scan.calls,

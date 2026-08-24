@@ -223,6 +223,60 @@ fun SettingsScreen(
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(14.dp)) {
+                Text("Messages RCS / chat", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Les messages « chat RCS » de Google Messages sont chiffrés de bout en bout et " +
+                        "ne figurent pas dans la base SMS d'Android : aucune app ne peut les lire. " +
+                        "PlanSMS peut toutefois relever leur ARRIVÉE via les notifications, pour savoir " +
+                        "qu'un correspondant a écrit depuis son appel manqué.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                var notifCapture by remember {
+                    mutableStateOf(com.fabrice.plansms.notif.NotifPrefs.captureEnabled(context))
+                }
+                var notifAccess by remember {
+                    mutableStateOf(com.fabrice.plansms.notif.MessageNotificationListener.isEnabled(context))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Capture des messages RCS", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Seuls l'expéditeur et l'heure sont conservés, en local. Ne fonctionne " +
+                                "que pour les messages reçus APRÈS activation.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Switch(checked = notifCapture, onCheckedChange = {
+                        notifCapture = it
+                        com.fabrice.plansms.notif.NotifPrefs.setCaptureEnabled(context, it)
+                    })
+                }
+                if (notifCapture) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (notifAccess) "✅ Accès aux notifications accordé."
+                        else "⚠️ Accès aux notifications requis — sans lui, rien n'est capté.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (notifAccess) Success else MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(
+                                android.content.Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                            )
+                            notifAccess = com.fabrice.plansms.notif.MessageNotificationListener.isEnabled(context)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (notifAccess) "Gérer l'accès aux notifications" else "Autoriser l'accès aux notifications") }
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
                 Text("Enregistrement audio", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(4.dp))
                 Text(

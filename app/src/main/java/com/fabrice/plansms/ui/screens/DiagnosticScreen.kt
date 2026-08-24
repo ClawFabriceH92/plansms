@@ -89,7 +89,31 @@ fun DiagnosticScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 report = ""
                 scope.launch {
                     val result = withContext(Dispatchers.IO) {
-                        CallLogRepository.diagnosticReport(context, number.trim())
+                        val base = CallLogRepository.diagnosticReport(context, number.trim())
+                        val key = CallLogRepository.matchKey(number.trim())
+                        val captured = try {
+                            com.fabrice.plansms.data.AppDatabase.get(context)
+                                .inboundMessageDao().forKey(key)
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                        val fmt = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.FRANCE)
+                        val extra = StringBuilder("\n\n--- Messages RCS captés via les notifications ---\n")
+                        if (!com.fabrice.plansms.notif.NotifPrefs.captureEnabled(context)) {
+                            extra.append("Capture désactivée (Réglages → Messages RCS / chat).\n")
+                        } else if (!com.fabrice.plansms.notif.MessageNotificationListener.isEnabled(context)) {
+                            extra.append("Capture activée MAIS accès aux notifications non accordé.\n")
+                        } else if (captured.isEmpty()) {
+                            extra.append("Capture active, aucun message relevé pour ce numéro.\n")
+                            extra.append("(seuls les messages reçus APRÈS activation sont visibles)\n")
+                        } else {
+                            captured.forEach { m ->
+                                extra.append(fmt.format(java.util.Date(m.receivedAt)))
+                                    .append("  [").append(m.address).append("]\n")
+                                    .append("    « ").append(m.preview).append(" »\n")
+                            }
+                        }
+                        base + extra.toString()
                     }
                     report = result
                     running = false

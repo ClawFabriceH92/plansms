@@ -38,6 +38,24 @@ object ContactsHelper {
         return out.values.toList()
     }
 
+    /** Numéro du contact portant exactement ce nom affiché (pour les notifications). */
+    fun phoneForDisplayName(context: Context, displayName: String): String? {
+        if (displayName.isBlank()) return null
+        return try {
+            var found: String? = null
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " = ?",
+                arrayOf(displayName),
+                null
+            )?.use { if (it.moveToFirst()) found = it.getString(0) }
+            found
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** Candidat de rapprochement par nom, avec score (100 = nom identique). */
     data class NameMatch(val contact: PhoneContact, val score: Int)
 

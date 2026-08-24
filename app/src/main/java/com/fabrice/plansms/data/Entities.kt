@@ -108,6 +108,21 @@ data class VoiceRecording(
     val exportInfo: String = ""      // destination atteinte, ou motif de l'échec
 )
 
+/**
+ * Message entrant capté via les notifications (RCS / chat de Google Messages).
+ * Ces messages ne sont PAS dans la base SMS d'Android : c'est la seule façon,
+ * pour une app tierce, de savoir qu'un correspondant a écrit.
+ */
+@Entity(tableName = "inbound_messages")
+data class InboundMessage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val matchKey: String,        // 9 derniers chiffres du numéro
+    val address: String,         // numéro ou nom affiché par la notification
+    val receivedAt: Long,
+    val source: String,          // NOTIF
+    val preview: String = ""
+)
+
 /** Règle d'auto-réponse (une seule, globale). */
 @Entity(tableName = "auto_reply_rules")
 data class AutoReplyRule(
