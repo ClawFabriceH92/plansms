@@ -65,6 +65,7 @@ fun SettingsScreen(
     var showAutoReply by remember { mutableStateOf(false) }
     var showTemplates by remember { mutableStateOf(false) }
     var showStorage by remember { mutableStateOf(false) }
+    var showDiagnostic by remember { mutableStateOf(false) }
     var showCalendars by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var autoUpdate by remember { mutableStateOf(vm.isAutoUpdateEnabled()) }
@@ -90,6 +91,11 @@ fun SettingsScreen(
 
     if (showStorage) {
         StorageScreen(onBack = { showStorage = false }, modifier = modifier)
+        return
+    }
+
+    if (showDiagnostic) {
+        DiagnosticScreen(onBack = { showDiagnostic = false }, modifier = modifier)
         return
     }
 
@@ -420,6 +426,10 @@ fun SettingsScreen(
                 Text("À propos", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(6.dp))
                 Text("PlanSMS v${BuildConfig.VERSION_NAME} — programmation de SMS fiable", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { showDiagnostic = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Diagnostic appels / SMS")
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = {
                     val logFile = AppLogger.saveToFile(context)

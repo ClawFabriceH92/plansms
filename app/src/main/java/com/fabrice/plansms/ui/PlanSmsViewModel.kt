@@ -36,7 +36,6 @@ data class PlanSmsUiState(
     val callLog: List<CallEntry> = emptyList(),
     val callLogLoaded: Boolean = false,
     val smsScanned: Int = -1,        // SMS reçus analysés (-1 = permission SMS absente)
-    val smsRepliesFound: Int = 0,
     val tomorrowRdv: List<com.fabrice.plansms.data.TomorrowRdv>? = null,  // null = pas encore chargé
     val tomorrowRdvNoEmail: Int = 0,
     val tomorrowRdvTarget: Long = 0,   // minuit du jour cible (demain, ou lundi si vendredi/week-end)
@@ -127,8 +126,7 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(
                 callLog = scan.calls,
                 callLogLoaded = true,
-                smsScanned = scan.smsScanned,
-                smsRepliesFound = scan.repliesFound
+                smsScanned = scan.smsScanned
             )
         }
     }
