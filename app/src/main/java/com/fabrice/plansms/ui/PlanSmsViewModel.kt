@@ -119,7 +119,8 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     fun loadCallLog() {
         viewModelScope.launch {
             val calls = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                CallLogRepository.readRecentCalls(getApplication())
+                val raw = CallLogRepository.readRecentCalls(getApplication())
+                CallLogRepository.markSmsReplies(getApplication(), raw)
             }
             _state.value = _state.value.copy(callLog = calls, callLogLoaded = true)
         }

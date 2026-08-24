@@ -46,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,6 +61,9 @@ import com.fabrice.plansms.ui.theme.Success
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** Mise en avant « a déjà répondu par SMS ». */
+private val Amber = Color(0xFFB26A00)
 
 /** Filtres du journal d'appels. */
 private enum class CallFilter(val label: String) {
@@ -85,20 +89,24 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
     var selectedKeys by rememberSaveable { mutableStateOf(setOf<String>()) }
     var filter by rememberSaveable { mutableStateOf(CallFilter.ALL) }
 
+    var mobilesOnly by rememberSaveable { mutableStateOf(true) }
+
     var hasPermission by remember { mutableStateOf(CallLogRepository.hasPermission(context)) }
+    var hasSmsPermission by remember { mutableStateOf(CallLogRepository.hasSmsReadPermission(context)) }
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-        if (granted) vm.loadCallLog()
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        hasPermission = result[Manifest.permission.READ_CALL_LOG] ?: hasPermission
+        hasSmsPermission = result[Manifest.permission.READ_SMS] ?: hasSmsPermission
+        if (hasPermission) vm.loadCallLog()
     }
 
     LaunchedEffect(hasPermission) {
         if (hasPermission && !state.callLogLoaded) vm.loadCallLog()
     }
 
-    // Liste regroupée par numéro, selon le filtre
-    val grouped = remember(state.callLog, filter) {
+    // Liste regroupée par numéro : filtre type d'appel, puis mobiles/étrangers
+    val allGrouped = remember(state.callLog, filter) {
         val filtered = when (filter) {
             CallFilter.ALL -> state.callLog
             CallFilter.MISSED -> state.callLog.filter { it.isMissed }
@@ -107,6 +115,10 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
         }
         CallLogRepository.groupByNumber(filtered)
     }
+    val grouped = remember(allGrouped, mobilesOnly) {
+        if (mobilesOnly) allGrouped.filter { CallLogRepository.canReceiveSms(it.number) } else allGrouped
+    }
+    val hiddenCount = allGrouped.size - grouped.size
     val selectedEntries = remember(grouped, selectedKeys, state.callLog) {
         // On repart de la liste complète regroupée pour garder la sélection même si le filtre change
         CallLogRepository.groupByNumber(state.callLog)
@@ -146,19 +158,30 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
         } else if (tab == 0) {
             CallLogTab(
                 hasPermission = hasPermission,
-                onAskPermission = { permissionLauncher.launch(Manifest.permission.READ_CALL_LOG) },
+                onAskPermission = {
+                    permissionLauncher.launch(
+                        arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_SMS)
+                    )
+                },
                 onRefresh = { vm.loadCallLog() },
                 loaded = state.callLogLoaded,
                 calls = grouped,
                 filter = filter,
                 onFilter = { filter = it },
+                mobilesOnly = mobilesOnly,
+                onMobilesOnly = { mobilesOnly = it },
+                hiddenCount = hiddenCount,
+                smsPermission = hasSmsPermission,
+                onAskSmsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS)) },
                 selectedKeys = selectedKeys,
                 onToggle = { entry ->
                     val key = CallLogRepository.normalize(entry.number)
                     selectedKeys = if (key in selectedKeys) selectedKeys - key else selectedKeys + key
                 },
                 onSelectAll = {
-                    selectedKeys = grouped.map { CallLogRepository.normalize(it.number) }.toSet()
+                    // On écarte volontairement ceux qui ont déjà répondu par SMS
+                    selectedKeys = grouped.filterNot { it.hasRepliedBySms }
+                        .map { CallLogRepository.normalize(it.number) }.toSet()
                 },
                 onSelectNone = { selectedKeys = emptySet() },
                 selectedCount = selectedEntries.size,
@@ -186,6 +209,11 @@ private fun CallLogTab(
     calls: List<CallEntry>,
     filter: CallFilter,
     onFilter: (CallFilter) -> Unit,
+    mobilesOnly: Boolean,
+    onMobilesOnly: (Boolean) -> Unit,
+    hiddenCount: Int,
+    smsPermission: Boolean,
+    onAskSmsPermission: () -> Unit,
     selectedKeys: Set<String>,
     onToggle: (CallEntry) -> Unit,
     onSelectAll: () -> Unit,
@@ -217,6 +245,36 @@ private fun CallLogTab(
                     onClick = { onFilter(f) },
                     label = { Text(f.label) }
                 )
+            }
+        }
+
+        // Mobiles uniquement (les fixes français ne reçoivent pas de SMS)
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(
+                selected = mobilesOnly,
+                onClick = { onMobilesOnly(!mobilesOnly) },
+                label = { Text(if (mobilesOnly) "📱 Mobiles + étrangers" else "Tous les numéros") }
+            )
+            Spacer(Modifier.width(8.dp))
+            if (mobilesOnly && hiddenCount > 0) {
+                Text(
+                    "$hiddenCount fixe(s)/service(s) masqué(s)",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (!smsPermission) {
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Autorise la lecture des SMS pour repérer ceux qui t'ont déjà répondu.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onAskSmsPermission) { Text("Autoriser") }
             }
         }
 
@@ -283,10 +341,15 @@ private fun CallCard(call: CallEntry, checked: Boolean, onToggle: () -> Unit) {
         call.isOutgoing -> Triple("📤", "Émis", MaterialTheme.colorScheme.secondary)
         else -> Triple("📞", "Appel", MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    val replied = call.hasRepliedBySms
+    val smsFmt = SimpleDateFormat("dd/MM à HH:mm", Locale.FRANCE)
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-            else MaterialTheme.colorScheme.surface
+            containerColor = when {
+                replied -> Amber.copy(alpha = 0.16f)
+                checked -> MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else -> MaterialTheme.colorScheme.surface
+            }
         ),
         modifier = Modifier.fillMaxWidth().clickable { onToggle() }
     ) {
@@ -306,6 +369,30 @@ private fun CallCard(call: CallEntry, checked: Boolean, onToggle: () -> Unit) {
                     if (call.count > 1) {
                         Spacer(Modifier.width(6.dp))
                         Text("· ${call.count} appels", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (!CallLogRepository.canReceiveSms(call.number)) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "· ${CallLogRepository.kindLabel(call.number)}",
+                            fontSize = 12.sp,
+                            color = Danger
+                        )
+                    }
+                }
+                if (replied) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "📩 A DÉJÀ RÉPONDU PAR SMS — ${smsFmt.format(Date(call.smsSinceAt))}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Amber
+                    )
+                    if (call.smsSincePreview.isNotBlank()) {
+                        Text(
+                            "« ${call.smsSincePreview} »",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -422,6 +509,32 @@ private fun ComposeSmsStep(
                 style = MaterialTheme.typography.bodyMedium,
                 color = Danger
             )
+        }
+
+        // Rappel fort : certains destinataires ont déjà répondu par SMS
+        val alreadyReplied = recipients.filter { it.hasRepliedBySms }
+        if (alreadyReplied.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Amber.copy(alpha = 0.16f))) {
+                Column(Modifier.padding(10.dp)) {
+                    Text(
+                        "📩 ${alreadyReplied.size} destinataire(s) t'ont déjà répondu par SMS",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Amber
+                    )
+                    alreadyReplied.forEach { r ->
+                        Text(
+                            "• " + r.name.ifBlank { r.number },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Text(
+                        "Retire-les si un nouveau SMS n'est pas nécessaire.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
 
         // Choix d'un modèle (liste complète)
