@@ -109,20 +109,26 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
     }
 
     // Liste regroupée par numéro : filtre type d'appel, puis mobiles/étrangers
-    val allGrouped = remember(state.callLog, filter) {
+    // Agrégats par numéro sur l'ENSEMBLE du journal : sans cela, filtrer sur
+    // « Manqués » masquerait les rappels sortants et rien ne serait jamais « traité ».
+    val aggregates = remember(state.callLog) {
+        CallLogRepository.groupByNumber(state.callLog)
+            .associateBy { CallLogRepository.normalize(it.number) }
+    }
+    val allGrouped = remember(state.callLog, filter, aggregates) {
         val filtered = when (filter) {
             CallFilter.ALL -> state.callLog
             CallFilter.MISSED -> state.callLog.filter { it.isMissed }
             CallFilter.INCOMING -> state.callLog.filter { it.isIncoming }
             CallFilter.OUTGOING -> state.callLog.filter { it.isOutgoing }
         }
-        CallLogRepository.groupByNumber(filtered)
+        CallLogRepository.applyFollowUp(CallLogRepository.groupByNumber(filtered), aggregates)
     }
     val grouped = remember(allGrouped, mobilesOnly) {
         if (mobilesOnly) allGrouped.filter { CallLogRepository.canReceiveSms(it.number) } else allGrouped
     }
     val hiddenCount = allGrouped.size - grouped.size
-    val repliesShown = allGrouped.count { it.hasRepliedBySms }
+    val repliesShown = allGrouped.count { it.isHandled }
     val selectedEntries = remember(grouped, selectedKeys, state.callLog) {
         // On repart de la liste complète regroupée pour garder la sélection même si le filtre change
         CallLogRepository.groupByNumber(state.callLog)
@@ -156,9 +162,10 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
             text = {
                 Column {
                     Text(
-                        "PlanSMS compare la date du dernier appel de chaque numéro avec celle du " +
-                            "dernier SMS reçu de ce même numéro. Le rapprochement se fait sur les 9 " +
-                            "derniers chiffres, donc les formats 06…, +336… et 00336… sont équivalents.",
+                        "Un numéro est « déjà traité » quand, depuis son dernier appel manqué, " +
+                            "tu l'as rappelé, il t'a envoyé un SMS, ou il a rappelé et tu as décroché. " +
+                            "Le rapprochement des numéros se fait sur les 9 derniers chiffres : les " +
+                            "formats 06…, +336… et 00336… sont équivalents.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(Modifier.height(8.dp))
@@ -220,7 +227,7 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
                 },
                 onSelectAll = {
                     // On écarte volontairement ceux qui ont déjà répondu par SMS
-                    selectedKeys = grouped.filterNot { it.hasRepliedBySms }
+                    selectedKeys = grouped.filterNot { it.isHandled }
                         .map { CallLogRepository.normalize(it.number) }.toSet()
                 },
                 onSelectNone = { selectedKeys = emptySet() },
@@ -325,7 +332,7 @@ private fun CallLogTab(
                     modifier = Modifier.weight(1f)
                 )
                 else -> Text(
-                    "📩 $smsScanned SMS analysés · $smsRepliesFound réponse(s) depuis un appel",
+                    "📩 $smsScanned SMS analysés · $smsRepliesFound appel(s) manqué(s) déjà traité(s)",
                     fontSize = 12.sp,
                     color = if (smsRepliesFound > 0) Amber else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
@@ -401,7 +408,7 @@ private fun CallCard(call: CallEntry, checked: Boolean, onToggle: () -> Unit) {
         call.isOutgoing -> Triple("📤", "Émis", MaterialTheme.colorScheme.secondary)
         else -> Triple("📞", "Appel", MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    val replied = call.hasRepliedBySms
+    val replied = call.isHandled
     val smsFmt = SimpleDateFormat("dd/MM à HH:mm", Locale.FRANCE)
     Card(
         colors = CardDefaults.cardColors(
@@ -442,21 +449,32 @@ private fun CallCard(call: CallEntry, checked: Boolean, onToggle: () -> Unit) {
                 if (replied) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "📩 A DÉJÀ RÉPONDU PAR SMS — ${smsFmt.format(Date(call.lastSmsAt))}",
+                        "✅ DÉJÀ TRAITÉ — ${call.handledReason} le ${smsFmt.format(Date(call.followUpAt))}",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Amber
                     )
-                    if (call.lastSmsPreview.isNotBlank()) {
+                    Text(
+                        "appel manqué du ${smsFmt.format(Date(call.lastMissedAt))}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (call.lastSmsAt == call.followUpAt && call.lastSmsPreview.isNotBlank()) {
                         Text(
                             "« ${call.lastSmsPreview} »",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                } else if (call.needsFollowUp) {
+                    Text(
+                        "⏳ appel manqué sans suite depuis le ${smsFmt.format(Date(call.lastMissedAt))}",
+                        fontSize = 12.sp,
+                        color = Danger
+                    )
                 } else if (call.hasEarlierSms) {
                     Text(
-                        "✉️ dernier SMS reçu le ${smsFmt.format(Date(call.lastSmsAt))} (avant l'appel)",
+                        "✉️ dernier SMS reçu le ${smsFmt.format(Date(call.lastSmsAt))}",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -578,24 +596,24 @@ private fun ComposeSmsStep(
         }
 
         // Rappel fort : certains destinataires ont déjà répondu par SMS
-        val alreadyReplied = recipients.filter { it.hasRepliedBySms }
+        val alreadyReplied = recipients.filter { it.isHandled }
         if (alreadyReplied.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Card(colors = CardDefaults.cardColors(containerColor = Amber.copy(alpha = 0.16f))) {
                 Column(Modifier.padding(10.dp)) {
                     Text(
-                        "📩 ${alreadyReplied.size} destinataire(s) t'ont déjà répondu par SMS",
+                        "📩 ${alreadyReplied.size} appel(s) manqué(s) déjà traité(s)",
                         style = MaterialTheme.typography.titleMedium,
                         color = Amber
                     )
                     alreadyReplied.forEach { r ->
                         Text(
-                            "• " + r.name.ifBlank { r.number },
+                            "• " + r.name.ifBlank { r.number } + " — " + r.handledReason,
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Text(
-                        "Retire-les si un nouveau SMS n'est pas nécessaire.",
+                        "Tu as déjà rappelé, ou ils t'ont écrit : retire-les si un SMS n'est pas nécessaire.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
