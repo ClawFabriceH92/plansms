@@ -14,13 +14,34 @@ data class CallEntry(
     val date: Long,            // epoch millis de l'appel (le plus récent si regroupé)
     val count: Int = 1,        // nombre d'appels regroupés pour ce numéro
     val lastSmsAt: Long = 0,   // date du dernier SMS reçu de ce numéro (0 = aucun)
-    val lastSmsPreview: String = ""
+    val lastSmsPreview: String = "",
+    // Agrégats calculés par numéro sur l'ensemble du journal (voir groupByNumber)
+    val lastMissedAt: Long = 0,
+    val lastOutgoingAt: Long = 0,
+    val lastIncomingAt: Long = 0
 ) {
-    /** Le correspondant a écrit APRÈS son dernier appel → ne pas le relancer. */
-    val hasRepliedBySms: Boolean get() = lastSmsAt > date
+    /**
+     * Suite donnée à un appel manqué : rappel de ma part, SMS reçu du
+     * correspondant, ou nouvel appel de sa part que j'ai décroché.
+     */
+    val followUpAt: Long get() = maxOf(lastOutgoingAt, lastSmsAt, lastIncomingAt)
 
-    /** Un SMS existe, mais il est antérieur au dernier appel (simple information). */
-    val hasEarlierSms: Boolean get() = lastSmsAt in 1 until date
+    /** Appel manqué auquel une suite a déjà été donnée → inutile d'envoyer un SMS. */
+    val isHandled: Boolean get() = lastMissedAt > 0 && followUpAt > lastMissedAt
+
+    /** Appel manqué resté sans suite → c'est celui-là qu'il faut traiter. */
+    val needsFollowUp: Boolean get() = lastMissedAt > 0 && followUpAt <= lastMissedAt
+
+    /** Motif du classement « déjà traité ». */
+    val handledReason: String get() = when {
+        !isHandled -> ""
+        lastSmsAt == followUpAt -> "SMS reçu"
+        lastOutgoingAt == followUpAt -> "tu as rappelé"
+        else -> "appel repris"
+    }
+
+    /** Un SMS existe sans qu'il y ait d'appel manqué en attente (simple information). */
+    val hasEarlierSms: Boolean get() = lastSmsAt > 0 && !isHandled
     val isMissed: Boolean get() = type == CallLog.Calls.MISSED_TYPE || type == CallLog.Calls.REJECTED_TYPE
     val isIncoming: Boolean get() = type == CallLog.Calls.INCOMING_TYPE
     val isOutgoing: Boolean get() = type == CallLog.Calls.OUTGOING_TYPE
@@ -81,18 +102,33 @@ object CallLogRepository {
         val byNumber = LinkedHashMap<String, CallEntry>()
         for (call in calls) {   // déjà trié du plus récent au plus ancien
             val key = normalize(call.number)
-            val existing = byNumber[key]
-            if (existing == null) {
-                byNumber[key] = call
-            } else {
-                byNumber[key] = existing.copy(
-                    count = existing.count + 1,
-                    name = existing.name.ifBlank { call.name }
-                )   // existing = appel le plus récent : son marquage SMS fait foi
-            }
+            // La base garde l'appel le plus récent ; les agrégats couvrent tous les appels du numéro
+            val base = byNumber[key] ?: call.copy(count = 0)
+            byNumber[key] = base.copy(
+                count = base.count + 1,
+                name = base.name.ifBlank { call.name },
+                lastSmsAt = maxOf(base.lastSmsAt, call.lastSmsAt),
+                lastSmsPreview = base.lastSmsPreview.ifBlank { call.lastSmsPreview },
+                lastMissedAt = maxOf(base.lastMissedAt, if (call.isMissed) call.date else 0L),
+                lastOutgoingAt = maxOf(base.lastOutgoingAt, if (call.isOutgoing) call.date else 0L),
+                lastIncomingAt = maxOf(base.lastIncomingAt, if (call.isIncoming) call.date else 0L)
+            )
         }
         return byNumber.values.toList()
     }
+
+    /** Reporte les agrégats calculés sur TOUT le journal sur une liste filtrée. */
+    fun applyFollowUp(filtered: List<CallEntry>, aggregates: Map<String, CallEntry>): List<CallEntry> =
+        filtered.map { entry ->
+            val agg = aggregates[normalize(entry.number)] ?: return@map entry
+            entry.copy(
+                lastSmsAt = agg.lastSmsAt,
+                lastSmsPreview = agg.lastSmsPreview,
+                lastMissedAt = agg.lastMissedAt,
+                lastOutgoingAt = agg.lastOutgoingAt,
+                lastIncomingAt = agg.lastIncomingAt
+            )
+        }
 
     /**
      * Forme canonique : les numéros français en 0X XX XX XX XX, les étrangers en +NN…
@@ -288,11 +324,23 @@ object CallLogRepository {
         sb.append("Total SMS reçus analysés : ").append(scanned).append("\n")
         sb.append("Dernier appel : ").append(if (lastCall > 0) fmt.format(java.util.Date(lastCall)) else "aucun").append("\n")
         sb.append("Dernier SMS  : ").append(if (lastSms > 0) fmt.format(java.util.Date(lastSms)) else "aucun").append("\n")
+        val lastMissed = calls.filter { it.isMissed }.maxOfOrNull { it.date } ?: 0L
+        val lastOutgoing = calls.filter { it.isOutgoing }.maxOfOrNull { it.date } ?: 0L
+        val lastIncoming = calls.filter { it.isIncoming }.maxOfOrNull { it.date } ?: 0L
+        sb.append("Dernier appel manqué : ")
+            .append(if (lastMissed > 0) fmt.format(java.util.Date(lastMissed)) else "aucun").append("\n")
+        sb.append("Dernier appel émis   : ")
+            .append(if (lastOutgoing > 0) fmt.format(java.util.Date(lastOutgoing)) else "aucun").append("\n")
+        sb.append("Dernier appel reçu   : ")
+            .append(if (lastIncoming > 0) fmt.format(java.util.Date(lastIncoming)) else "aucun").append("\n")
+        val followUp = maxOf(lastOutgoing, lastIncoming, lastSms)
         sb.append(
             when {
-                lastSms == 0L -> "→ aucun SMS de ce numéro : pas d'alerte possible."
-                lastSms > lastCall -> "→ SMS POSTÉRIEUR à l'appel : l'alerte doit s'afficher."
-                else -> "→ SMS antérieur au dernier appel : affiché en information, sans alerte."
+                lastMissed == 0L -> "→ aucun appel manqué : rien à traiter pour ce numéro."
+                followUp > lastMissed -> "→ DÉJÀ TRAITÉ depuis l'appel manqué (" +
+                    (if (lastSms == followUp) "SMS reçu" else if (lastOutgoing == followUp) "tu as rappelé" else "appel repris") +
+                    ") : l'alerte doit s'afficher."
+                else -> "→ appel manqué SANS SUITE : ce numéro est à contacter."
             }
         )
         return sb.toString()

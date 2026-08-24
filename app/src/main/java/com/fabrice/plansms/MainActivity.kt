@@ -45,6 +45,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Re-scan à chaque ouverture / retour dans l'app : un SMS ou un rappel
+        // survenu entre-temps doit être pris en compte immédiatement.
+        if (com.fabrice.plansms.data.CallLogRepository.hasPermission(this)) {
+            vm.loadCallLog()
+        }
+    }
+
     private fun requestPermissionsIfNeeded() {
         val needed = mutableListOf(
             Manifest.permission.SEND_SMS,
