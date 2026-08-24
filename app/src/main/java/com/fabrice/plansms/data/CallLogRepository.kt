@@ -138,30 +138,54 @@ object CallLogRepository {
             PackageManager.PERMISSION_GRANTED
 
     /**
-     * Dernier SMS REÇU par numéro depuis [since] : clé = numéro canonique,
-     * valeur = (date, extrait). Sert à repérer les correspondants qui ont déjà
-     * répondu par SMS après leur appel.
+     * Clé de rapprochement tolérante : les 9 derniers chiffres.
+     * 0681371545, +33681371545 et 0033681371545 donnent tous « 681371545 »,
+     * ce qui évite tout écart de préfixe entre le journal d'appels et les SMS.
      */
-    fun inboundSmsByNumber(context: Context, since: Long): Map<String, Pair<Long, String>> {
-        if (!hasSmsReadPermission(context)) return emptyMap()
+    fun matchKey(number: String): String {
+        val digits = number.filter { it.isDigit() }
+        return if (digits.length >= 9) digits.takeLast(9) else digits
+    }
+
+    /** Résultat d'une lecture du journal enrichie des réponses SMS. */
+    data class CallLogScan(
+        val calls: List<CallEntry>,
+        val smsScanned: Int,        // nombre de SMS reçus analysés (-1 = permission absente)
+        val repliesFound: Int
+    )
+
+    /**
+     * Derniers SMS REÇUS, par numéro : clé = 9 derniers chiffres,
+     * valeur = (date du plus récent, extrait). On interroge la table complète
+     * en filtrant sur le type « reçu » — plus fiable que la vue /inbox selon les surcouches.
+     */
+    private fun inboundSmsByNumber(context: Context, since: Long): Pair<Map<String, Pair<Long, String>>, Int> {
+        if (!hasSmsReadPermission(context)) return emptyMap<String, Pair<Long, String>>() to -1
         val out = HashMap<String, Pair<Long, String>>()
+        var scanned = 0
         try {
             val cursor = context.contentResolver.query(
-                android.provider.Telephony.Sms.Inbox.CONTENT_URI,
+                android.provider.Telephony.Sms.CONTENT_URI,
                 arrayOf(
                     android.provider.Telephony.Sms.ADDRESS,
                     android.provider.Telephony.Sms.DATE,
                     android.provider.Telephony.Sms.BODY
                 ),
-                android.provider.Telephony.Sms.DATE + " > ?",
-                arrayOf(since.toString()),
+                android.provider.Telephony.Sms.TYPE + " = ? AND " +
+                    android.provider.Telephony.Sms.DATE + " > ?",
+                arrayOf(
+                    android.provider.Telephony.Sms.MESSAGE_TYPE_INBOX.toString(),
+                    since.toString()
+                ),
                 android.provider.Telephony.Sms.DATE + " DESC"
             )
             cursor?.use {
                 while (it.moveToNext()) {
+                    scanned++
                     val address = it.getString(0)?.trim() ?: continue
                     if (address.isBlank()) continue
-                    val key = normalize(address)
+                    val key = matchKey(address)
+                    if (key.isEmpty()) continue
                     val date = it.getLong(1)
                     val previous = out[key]
                     if (previous == null || date > previous.first) {
@@ -170,23 +194,26 @@ object CallLogRepository {
                 }
             }
         } catch (_: Exception) {
-            // boîte de réception inaccessible → aucun marquage, l'UI le signale
+            // provider inaccessible (surcouche constructeur) → 0 SMS lus, l'UI le signale
         }
-        return out
+        return out to scanned
     }
 
     /** Marque les appels dont le correspondant a envoyé un SMS APRÈS l'appel. */
-    fun markSmsReplies(context: Context, calls: List<CallEntry>): List<CallEntry> {
-        if (calls.isEmpty()) return calls
-        val inbox = inboundSmsByNumber(context, calls.minOf { it.date })
-        if (inbox.isEmpty()) return calls
-        return calls.map { call ->
-            val hit = inbox[normalize(call.number)]
+    fun markSmsReplies(context: Context, calls: List<CallEntry>): CallLogScan {
+        if (calls.isEmpty()) return CallLogScan(calls, if (hasSmsReadPermission(context)) 0 else -1, 0)
+        val (inbox, scanned) = inboundSmsByNumber(context, calls.minOf { it.date })
+        if (inbox.isEmpty()) return CallLogScan(calls, scanned, 0)
+        var found = 0
+        val marked = calls.map { call ->
+            val hit = inbox[matchKey(call.number)]
             if (hit != null && hit.first > call.date) {
+                found++
                 call.copy(smsSinceAt = hit.first, smsSincePreview = hit.second.take(70))
             } else {
                 call
             }
         }
+        return CallLogScan(marked, scanned, found)
     }
 }
