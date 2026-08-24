@@ -90,6 +90,7 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
     var filter by rememberSaveable { mutableStateOf(CallFilter.ALL) }
 
     var mobilesOnly by rememberSaveable { mutableStateOf(true) }
+    var showSmsInfo by remember { mutableStateOf(false) }
 
     var hasPermission by remember { mutableStateOf(CallLogRepository.hasPermission(context)) }
     var hasSmsPermission by remember { mutableStateOf(CallLogRepository.hasSmsReadPermission(context)) }
@@ -101,8 +102,10 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
         if (hasPermission) vm.loadCallLog()
     }
 
-    LaunchedEffect(hasPermission) {
-        if (hasPermission && !state.callLogLoaded) vm.loadCallLog()
+    // Recharge aussi quand la permission SMS vient d'être accordée, sinon le
+    // marquage « a déjà répondu » resterait vide jusqu'au prochain lancement.
+    LaunchedEffect(hasPermission, hasSmsPermission) {
+        if (hasPermission) vm.loadCallLog()
     }
 
     // Liste regroupée par numéro : filtre type d'appel, puis mobiles/étrangers
@@ -145,6 +148,39 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
         return
     }
 
+    if (showSmsInfo) {
+        AlertDialog(
+            onDismissRequest = { showSmsInfo = false },
+            title = { Text("Détection des réponses SMS") },
+            text = {
+                Column {
+                    Text(
+                        "PlanSMS compare la date du dernier appel de chaque numéro avec celle du " +
+                            "dernier SMS reçu de ce même numéro. Le rapprochement se fait sur les 9 " +
+                            "derniers chiffres, donc les formats 06…, +336… et 00336… sont équivalents.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Si une réponse n'est pas détectée :", style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "• Message RCS / « chat » : avec Google Messages, les échanges entre deux " +
+                            "téléphones compatibles passent par RCS et ne sont PAS enregistrés comme " +
+                            "des SMS. Android ne donne aucun accès à ces messages — ils resteront " +
+                            "invisibles pour l'app. Désactiver le chat RCS dans Google Messages fait " +
+                            "repasser les échanges en SMS classiques.\n\n" +
+                            "• Message reçu AVANT l'appel : seuls les SMS postérieurs au dernier appel " +
+                            "sont signalés.\n\n" +
+                            "• Surcouche constructeur (Xiaomi, Samsung…) : vérifie que l'autorisation " +
+                            "SMS est bien accordée dans les réglages Android de PlanSMS.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSmsInfo = false }) { Text("Compris") } }
+        )
+    }
+
     // --- Étape 1 : les 2 onglets ---
     Column(modifier = modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = tab) {
@@ -173,6 +209,9 @@ fun JournalScreen(vm: PlanSmsViewModel, modifier: Modifier = Modifier) {
                 hiddenCount = hiddenCount,
                 smsPermission = hasSmsPermission,
                 onAskSmsPermission = { permissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS)) },
+                smsScanned = state.smsScanned,
+                smsRepliesFound = state.smsRepliesFound,
+                onShowSmsInfo = { showSmsInfo = true },
                 selectedKeys = selectedKeys,
                 onToggle = { entry ->
                     val key = CallLogRepository.normalize(entry.number)
@@ -214,6 +253,9 @@ private fun CallLogTab(
     hiddenCount: Int,
     smsPermission: Boolean,
     onAskSmsPermission: () -> Unit,
+    smsScanned: Int,
+    smsRepliesFound: Int,
+    onShowSmsInfo: () -> Unit,
     selectedKeys: Set<String>,
     onToggle: (CallEntry) -> Unit,
     onSelectAll: () -> Unit,
@@ -265,16 +307,33 @@ private fun CallLogTab(
                 )
             }
         }
-        if (!smsPermission) {
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
+        // Diagnostic de la détection « a déjà répondu par SMS »
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            when {
+                !smsPermission -> Text(
                     "Autorise la lecture des SMS pour repérer ceux qui t'ont déjà répondu.",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Danger,
                     modifier = Modifier.weight(1f)
                 )
+                smsScanned <= 0 -> Text(
+                    "⚠️ Aucun SMS reçu n'a pu être lu — la détection des réponses ne peut pas fonctionner.",
+                    fontSize = 12.sp,
+                    color = Danger,
+                    modifier = Modifier.weight(1f)
+                )
+                else -> Text(
+                    "📩 $smsScanned SMS analysés · $smsRepliesFound réponse(s) depuis un appel",
+                    fontSize = 12.sp,
+                    color = if (smsRepliesFound > 0) Amber else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (!smsPermission) {
                 TextButton(onClick = onAskSmsPermission) { Text("Autoriser") }
+            } else {
+                TextButton(onClick = onShowSmsInfo) { Text("?") }
             }
         }
 

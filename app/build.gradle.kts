@@ -13,8 +13,8 @@ android {
         applicationId = "com.fabrice.plansms"
         minSdk = 29
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.9.2"
+        versionCode = 20
+        versionName = "0.9.3"
     }
 
     // Signature CI : la release est signée avec le keystore fourni via variables

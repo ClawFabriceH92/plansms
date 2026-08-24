@@ -35,6 +35,8 @@ data class PlanSmsUiState(
     val calendarCounts: Map<Long, Int> = emptyMap(),
     val callLog: List<CallEntry> = emptyList(),
     val callLogLoaded: Boolean = false,
+    val smsScanned: Int = -1,        // SMS reçus analysés (-1 = permission SMS absente)
+    val smsRepliesFound: Int = 0,
     val tomorrowRdv: List<com.fabrice.plansms.data.TomorrowRdv>? = null,  // null = pas encore chargé
     val tomorrowRdvNoEmail: Int = 0,
     val tomorrowRdvTarget: Long = 0,   // minuit du jour cible (demain, ou lundi si vendredi/week-end)
@@ -118,11 +120,16 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     // --- Journal d'appels → SMS groupé ---
     fun loadCallLog() {
         viewModelScope.launch {
-            val calls = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val scan = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val raw = CallLogRepository.readRecentCalls(getApplication())
                 CallLogRepository.markSmsReplies(getApplication(), raw)
             }
-            _state.value = _state.value.copy(callLog = calls, callLogLoaded = true)
+            _state.value = _state.value.copy(
+                callLog = scan.calls,
+                callLogLoaded = true,
+                smsScanned = scan.smsScanned,
+                smsRepliesFound = scan.repliesFound
+            )
         }
     }
 
