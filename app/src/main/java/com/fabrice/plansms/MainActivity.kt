@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
         }
         // Rappel 15h des RDV du lendemain (jours ouvrés)
         com.fabrice.plansms.scheduler.RdvReminder.schedule(this)
+        importSharedAudio(intent)
         val openRdv = intent?.getBooleanExtra(com.fabrice.plansms.scheduler.RdvReminder.EXTRA_OPEN_RDV, false) == true
         setContent {
             PlanSmsTheme {
@@ -43,6 +44,32 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        importSharedAudio(intent)
+    }
+
+    /** Un message vocal (ou tout audio) partagé depuis une autre app arrive ici. */
+    private fun importSharedAudio(intent: android.content.Intent?) {
+        if (intent?.action != android.content.Intent.ACTION_SEND) return
+        if (intent.type?.startsWith("audio/") != true) return
+        @Suppress("DEPRECATION")
+        val uri = intent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM) ?: return
+        val appContext = applicationContext
+        Thread {
+            val label = com.fabrice.plansms.data.AudioImporter.importFrom(appContext, uri)
+            runOnUiThread {
+                android.widget.Toast.makeText(
+                    appContext,
+                    if (label != null) "Audio importé : voir Journal → Audio"
+                    else "Import impossible de ce fichier",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }.start()
     }
 
     override fun onResume() {
