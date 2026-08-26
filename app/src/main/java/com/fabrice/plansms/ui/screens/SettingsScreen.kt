@@ -29,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -226,10 +227,76 @@ fun SettingsScreen(
                 Text("Transcription audio → texte", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Transcrit les enregistrements et les messages vocaux importés. " +
-                        "Fonctionne avec tout serveur exposant l'API compatible OpenAI " +
-                        "/v1/audio/transcriptions — whisper.cpp, faster-whisper… " +
-                        "Sur ton propre réseau, les enregistrements n'en sortent jamais.",
+                    "Transcrit les enregistrements et les messages vocaux importés.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                var trMode by remember {
+                    mutableStateOf(com.fabrice.plansms.data.TranscriptionPrefs.mode(context))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        com.fabrice.plansms.data.TranscriptionPrefs.MODE_DEVICE to "📱 Sur le téléphone",
+                        com.fabrice.plansms.data.TranscriptionPrefs.MODE_SERVER to "🖥 Serveur"
+                    ).forEach { (value, label) ->
+                        FilterChip(
+                            selected = trMode == value,
+                            onClick = {
+                                trMode = value
+                                com.fabrice.plansms.data.TranscriptionPrefs.setMode(context, value)
+                            },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                if (trMode == com.fabrice.plansms.data.TranscriptionPrefs.MODE_DEVICE) {
+                    val deviceOk = com.fabrice.plansms.data.OnDeviceTranscriber.isSupported(context)
+                    Text(
+                        "Le moteur vocal hors ligne d'Android transcrit le fichier directement " +
+                            "sur l'appareil : aucune connexion, rien qui sorte du téléphone.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (deviceOk) "✅ Moteur hors ligne disponible — bouton « 📝 Transcrire » actif."
+                        else "⚠️ " + com.fabrice.plansms.data.OnDeviceTranscriber.unsupportedReason(context),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (deviceOk) Success else MaterialTheme.colorScheme.error
+                    )
+                    if (!deviceOk) {
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    context.startActivity(
+                                        android.content.Intent("com.android.settings.TTS_SETTINGS")
+                                    )
+                                } catch (_: Exception) {
+                                    context.startActivity(
+                                        android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Ouvrir les réglages vocaux Android") }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Qualité correcte sur une voix claire ; un message bruité ou très rapide " +
+                            "peut être partiellement reconnu. Bascule sur « Serveur » (Whisper) " +
+                            "pour une transcription nettement plus fidèle.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (trMode == com.fabrice.plansms.data.TranscriptionPrefs.MODE_SERVER) {
+                Text(
+                    "Serveur exposant l'API compatible OpenAI /v1/audio/transcriptions — " +
+                        "whisper.cpp, faster-whisper… Sur ton propre réseau, les enregistrements " +
+                        "n'en sortent jamais.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(8.dp))
@@ -282,6 +349,7 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (trUrl.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else Success
                 )
+                }
             }
         }
 

@@ -15,6 +15,13 @@ object TranscriptionPrefs {
     private const val K_MODEL = "model"
     private const val K_KEY = "api_key"
     private const val K_LANG = "language"
+    private const val K_MODE = "mode"
+
+    /** Transcription par le moteur hors ligne d'Android — rien ne sort du téléphone. */
+    const val MODE_DEVICE = "DEVICE"
+
+    /** Transcription par un serveur compatible OpenAI (whisper.cpp, faster-whisper…). */
+    const val MODE_SERVER = "SERVER"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -47,5 +54,15 @@ object TranscriptionPrefs {
         prefs(context).edit().putString(K_KEY, SecretStore.encrypt(value)).apply()
     }
 
-    fun isConfigured(context: Context): Boolean = serverUrl(context).isNotBlank()
+    fun mode(context: Context): String =
+        prefs(context).getString(K_MODE, MODE_DEVICE) ?: MODE_DEVICE
+
+    fun setMode(context: Context, value: String) {
+        prefs(context).edit().putString(K_MODE, value).apply()
+    }
+
+    /** Vrai si la transcription est utilisable en l'état. */
+    fun isConfigured(context: Context): Boolean =
+        if (mode(context) == MODE_DEVICE) OnDeviceTranscriber.isSupported(context)
+        else serverUrl(context).isNotBlank()
 }

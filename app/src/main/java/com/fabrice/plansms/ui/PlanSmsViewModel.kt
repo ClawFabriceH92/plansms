@@ -225,18 +225,46 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     fun exportRecording(r: com.fabrice.plansms.data.VoiceRecording) =
         viewModelScope.launch { repo.exportRecording(r) }
 
-    /** Transcription audio → texte via le serveur configuré. */
+    /** Transcription audio → texte : moteur hors ligne du téléphone, ou serveur. */
     fun transcribeRecording(r: com.fabrice.plansms.data.VoiceRecording) {
         if (_state.value.transcribingId != 0L) return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(transcribingId = r.id, transcriptionError = "")
-            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                repo.transcribeRecording(r)
+        val app = getApplication<Application>()
+        val file = java.io.File(r.filePath)
+        _state.value = _state.value.copy(transcribingId = r.id, transcriptionError = "")
+
+        if (com.fabrice.plansms.data.TranscriptionPrefs.mode(app) ==
+            com.fabrice.plansms.data.TranscriptionPrefs.MODE_DEVICE
+        ) {
+            // SpeechRecognizer exige le thread principal ; viewModelScope y est déjà.
+            com.fabrice.plansms.data.OnDeviceTranscriber.transcribe(app, file) { ok, text, error ->
+                viewModelScope.launch {
+                    if (ok) repo.saveTranscript(r, text)
+                    _state.value = _state.value.copy(
+                        transcribingId = 0,
+                        transcriptionError = if (ok) "" else error
+                    )
+                }
             }
-            _state.value = _state.value.copy(
-                transcribingId = 0,
-                transcriptionError = if (result.ok) "" else result.error
-            )
+            // Garde-fou : si le moteur ne rappelle jamais, on ne reste pas bloqué
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(300_000)
+                if (_state.value.transcribingId == r.id) {
+                    _state.value = _state.value.copy(
+                        transcribingId = 0,
+                        transcriptionError = "Le moteur vocal n'a pas répondu (délai dépassé)."
+                    )
+                }
+            }
+        } else {
+            viewModelScope.launch {
+                val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    repo.transcribeRecording(r)
+                }
+                _state.value = _state.value.copy(
+                    transcribingId = 0,
+                    transcriptionError = if (result.ok) "" else result.error
+                )
+            }
         }
     }
 
