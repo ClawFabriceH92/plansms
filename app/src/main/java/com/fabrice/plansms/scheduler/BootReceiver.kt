@@ -56,6 +56,14 @@ class BootReceiver : BroadcastReceiver() {
                 }
             }
             AppLogger.i("BootReceiver", "Rattrapage : $caughtUp envoyé(s), $rescheduled replanifié(s)")
+
+            // Relais SMS : la file d'attente survit au redémarrage, on la reprend
+            // et on réarme le réveil du prochain créneau.
+            try {
+                com.fabrice.plansms.relay.SmsRelay.flush(context)
+            } catch (e: Exception) {
+                AppLogger.e("BootReceiver", "Reprise du relais SMS impossible", e)
+            }
         }
 
         // Réarme le rappel 15h des RDV du lendemain (jours ouvrés)

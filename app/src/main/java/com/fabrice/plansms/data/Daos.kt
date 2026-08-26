@@ -126,3 +126,60 @@ interface AutoReplyRuleDao {
     @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
     suspend fun upsert(rule: AutoReplyRule)
 }
+
+@Dao
+interface RelaySlotDao {
+    @Query("SELECT * FROM relay_slots ORDER BY startMin ASC")
+    fun observeAll(): Flow<List<RelaySlot>>
+
+    @Query("SELECT * FROM relay_slots")
+    suspend fun getAll(): List<RelaySlot>
+
+    @Insert
+    suspend fun insert(slot: RelaySlot): Long
+
+    @Update
+    suspend fun update(slot: RelaySlot)
+
+    @Delete
+    suspend fun delete(slot: RelaySlot)
+}
+
+@Dao
+interface RelayExceptionDao {
+    @Query("SELECT * FROM relay_exceptions ORDER BY epochDay ASC")
+    fun observeAll(): Flow<List<RelayException>>
+
+    @Query("SELECT * FROM relay_exceptions WHERE epochDay >= :fromDay")
+    suspend fun from(fromDay: Long): List<RelayException>
+
+    @Insert
+    suspend fun insert(e: RelayException): Long
+
+    @Delete
+    suspend fun delete(e: RelayException)
+
+    @Query("DELETE FROM relay_exceptions WHERE epochDay < :beforeDay")
+    suspend fun purge(beforeDay: Long)
+}
+
+@Dao
+interface RelayItemDao {
+    @Query("SELECT * FROM relay_items ORDER BY receivedAt DESC LIMIT 300")
+    fun observeRecent(): Flow<List<RelayItem>>
+
+    @Query("SELECT * FROM relay_items WHERE status = 'QUEUED' ORDER BY receivedAt ASC")
+    suspend fun queued(): List<RelayItem>
+
+    @Query("SELECT COUNT(*) FROM relay_items WHERE status = 'QUEUED'")
+    fun observeQueuedCount(): Flow<Int>
+
+    @Insert
+    suspend fun insert(item: RelayItem): Long
+
+    @Update
+    suspend fun update(item: RelayItem)
+
+    @Query("DELETE FROM relay_items WHERE receivedAt < :before AND status <> 'QUEUED'")
+    suspend fun purge(before: Long)
+}

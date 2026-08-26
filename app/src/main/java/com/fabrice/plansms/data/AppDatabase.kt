@@ -6,8 +6,12 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [ScheduledMessage::class, Template::class, SendLog::class, ContactGroup::class, GroupMember::class, AutoReplyRule::class, VoiceRecording::class, InboundMessage::class],
-    version = 6,
+    entities = [
+        ScheduledMessage::class, Template::class, SendLog::class, ContactGroup::class,
+        GroupMember::class, AutoReplyRule::class, VoiceRecording::class, InboundMessage::class,
+        RelaySlot::class, RelayException::class, RelayItem::class
+    ],
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -19,6 +23,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun autoReplyRuleDao(): AutoReplyRuleDao
     abstract fun voiceRecordingDao(): VoiceRecordingDao
     abstract fun inboundMessageDao(): InboundMessageDao
+    abstract fun relaySlotDao(): RelaySlotDao
+    abstract fun relayExceptionDao(): RelayExceptionDao
+    abstract fun relayItemDao(): RelayItemDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -30,7 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plansms.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build().also { instance = it }
             }
 
@@ -84,6 +91,39 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE voice_recordings ADD COLUMN transcript TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** Relais SMS : créneaux, exceptions, file d'attente + historique. */
+        private val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS relay_slots (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "daysMask INTEGER NOT NULL, " +
+                        "startMin INTEGER NOT NULL, " +
+                        "endMin INTEGER NOT NULL, " +
+                        "enabled INTEGER NOT NULL DEFAULT 1)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS relay_exceptions (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "epochDay INTEGER NOT NULL, " +
+                        "active INTEGER NOT NULL, " +
+                        "note TEXT NOT NULL DEFAULT '')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS relay_items (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "sender TEXT NOT NULL, " +
+                        "body TEXT NOT NULL, " +
+                        "receivedAt INTEGER NOT NULL, " +
+                        "status TEXT NOT NULL DEFAULT 'QUEUED', " +
+                        "attempts INTEGER NOT NULL DEFAULT 0, " +
+                        "lastAttemptAt INTEGER NOT NULL DEFAULT 0, " +
+                        "sentAt INTEGER NOT NULL DEFAULT 0, " +
+                        "detail TEXT NOT NULL DEFAULT '')"
+                )
             }
         }
     }

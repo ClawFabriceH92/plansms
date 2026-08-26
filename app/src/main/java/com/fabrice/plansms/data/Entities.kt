@@ -135,3 +135,57 @@ data class AutoReplyRule(
     val delayMinutes: Int = 0,         // délai avant réponse
     val onlyWhenIdle: Boolean = false  // ne répondre que si téléphone inoccupé
 )
+
+// ---------------------------------------------------------------------------
+// Relais SMS : transfert automatique des SMS reçus vers d'autres destinataires
+// ---------------------------------------------------------------------------
+
+/**
+ * Créneau récurrent hebdomadaire pendant lequel le relais transfère.
+ * [daysMask] : bit 0 = lundi … bit 6 = dimanche.
+ * [startMin] / [endMin] : minutes depuis minuit, fin exclue.
+ */
+@Entity(tableName = "relay_slots")
+data class RelaySlot(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val daysMask: Int,
+    val startMin: Int,
+    val endMin: Int,
+    val enabled: Boolean = true
+)
+
+/**
+ * Jour d'exception : force l'activation ou l'inactivation, quels que soient
+ * les créneaux récurrents. [epochDay] = jour calendaire local.
+ */
+@Entity(tableName = "relay_exceptions")
+data class RelayException(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val epochDay: Long,
+    val active: Boolean,
+    val note: String = ""
+)
+
+/**
+ * Un SMS reçu, à transférer. Sert à la fois de file d'attente et d'historique :
+ * le statut dit où il en est.
+ */
+@Entity(tableName = "relay_items")
+data class RelayItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sender: String,
+    val body: String,
+    val receivedAt: Long,
+    val status: String = RelayStatus.QUEUED,
+    val attempts: Int = 0,
+    val lastAttemptAt: Long = 0,
+    val sentAt: Long = 0,
+    val detail: String = ""      // destinations atteintes, ou motif de l'échec
+)
+
+object RelayStatus {
+    const val QUEUED = "QUEUED"     // en attente (hors plage, ou nouvelle tentative à venir)
+    const val SENT = "SENT"         // transféré à tous les destinataires
+    const val PARTIAL = "PARTIAL"   // une partie des destinataires seulement
+    const val FAILED = "FAILED"     // échec après toutes les tentatives
+}
