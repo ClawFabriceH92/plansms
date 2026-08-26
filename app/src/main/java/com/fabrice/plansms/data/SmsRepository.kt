@@ -38,6 +38,10 @@ class SmsRepository(private val context: Context) {
         return res.message
     }
 
+    /** Mémorise un texte transcrit (quelle qu'en soit la source). */
+    suspend fun saveTranscript(r: VoiceRecording, text: String) =
+        recordingDao.update(r.copy(transcript = text))
+
     /** Transcrit l'enregistrement via le serveur configuré et mémorise le texte. */
     suspend fun transcribeRecording(r: VoiceRecording): Transcriber.Result {
         val result = Transcriber.transcribe(context, java.io.File(r.filePath))
