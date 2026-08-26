@@ -350,6 +350,50 @@ fun SettingsScreen(
                     color = if (trUrl.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else Success
                 )
                 }
+
+                Spacer(Modifier.height(14.dp))
+                Text("Lexique de correction", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Aucun moteur vocal ne connaît « liasse fiscale » ni le nom de tes " +
+                        "clients : il écrit ce qui sonne pareil. Les termes ci-dessous sont " +
+                        "rétablis automatiquement après chaque transcription, et les " +
+                        "corrections appliquées te sont affichées. Un terme par ligne.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                var glossary by remember {
+                    mutableStateOf(com.fabrice.plansms.data.TranscriptionPrefs.glossary(context))
+                }
+                OutlinedTextField(
+                    value = glossary,
+                    onValueChange = {
+                        glossary = it
+                        com.fabrice.plansms.data.TranscriptionPrefs.setGlossary(context, it)
+                    },
+                    label = { Text("Un terme ou une expression par ligne") },
+                    minLines = 4,
+                    maxLines = 10,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Prudence voulue : une expression de plusieurs mots est corrigée " +
+                        "largement, un mot isolé seulement s'il fait 6 lettres ou plus et " +
+                        "ne diffère que d'une lettre — pour ne jamais changer « prévision » " +
+                        "en « provision ».",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = {
+                        glossary = com.fabrice.plansms.data.TranscriptionPrefs.DEFAULT_GLOSSARY
+                        com.fabrice.plansms.data.TranscriptionPrefs.setGlossary(context, glossary)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Rétablir le lexique par défaut") }
             }
         }
 

@@ -16,6 +16,31 @@ object TranscriptionPrefs {
     private const val K_KEY = "api_key"
     private const val K_LANG = "language"
     private const val K_MODE = "mode"
+    private const val K_GLOSSARY = "glossary"
+
+    /**
+     * Lexique par défaut : uniquement des expressions de plusieurs mots, là où
+     * une correction ne peut pas se tromper de sens. Les mots isolés (noms de
+     * clients, sigles) sont à ajouter sciemment.
+     */
+    const val DEFAULT_GLOSSARY = """commissaire aux comptes
+commissaire aux apports
+expert-comptable
+liasse fiscale
+assemblée générale
+compte de résultat
+capitaux propres
+chiffre d'affaires
+exercice clos
+conventions réglementées
+augmentation de capital
+apport en nature
+rapport spécial
+procès-verbal
+grand livre
+balance générale
+approbation des comptes
+compte rendu"""
 
     /** Transcription par le moteur hors ligne d'Android — rien ne sort du téléphone. */
     const val MODE_DEVICE = "DEVICE"
@@ -59,6 +84,14 @@ object TranscriptionPrefs {
 
     fun setMode(context: Context, value: String) {
         prefs(context).edit().putString(K_MODE, value).apply()
+    }
+
+    /** Lexique de correction, un terme par ligne. */
+    fun glossary(context: Context): String =
+        prefs(context).getString(K_GLOSSARY, DEFAULT_GLOSSARY) ?: DEFAULT_GLOSSARY
+
+    fun setGlossary(context: Context, value: String) {
+        prefs(context).edit().putString(K_GLOSSARY, value).apply()
     }
 
     /** Vrai si la transcription est utilisable en l'état. */
