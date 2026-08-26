@@ -40,6 +40,8 @@ data class PlanSmsUiState(
     val tomorrowRdvNoEmail: Int = 0,
     val tomorrowRdvTarget: Long = 0,   // minuit du jour cible (demain, ou lundi si vendredi/week-end)
     val recordings: List<com.fabrice.plansms.data.VoiceRecording> = emptyList(),
+    val transcribingId: Long = 0,       // enregistrement en cours de transcription
+    val transcriptionError: String = "",
     val bulkSending: Boolean = false,
     val bulkProgress: String = "",      // "2/5" pendant un envoi groupé
     val bulkReport: String = "",        // rapport final "4 envoyés · 1 échec"
@@ -222,6 +224,21 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exportRecording(r: com.fabrice.plansms.data.VoiceRecording) =
         viewModelScope.launch { repo.exportRecording(r) }
+
+    /** Transcription audio → texte via le serveur configuré. */
+    fun transcribeRecording(r: com.fabrice.plansms.data.VoiceRecording) {
+        if (_state.value.transcribingId != 0L) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(transcribingId = r.id, transcriptionError = "")
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                repo.transcribeRecording(r)
+            }
+            _state.value = _state.value.copy(
+                transcribingId = 0,
+                transcriptionError = if (result.ok) "" else result.error
+            )
+        }
+    }
 
     fun clearBulkReport() {
         _state.value = _state.value.copy(bulkReport = "", bulkProgress = "")

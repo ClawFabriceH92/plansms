@@ -105,7 +105,8 @@ data class VoiceRecording(
     val sizeBytes: Long = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val exportStatus: String = "",   // "" (local) / OK / ERREUR
-    val exportInfo: String = ""      // destination atteinte, ou motif de l'échec
+    val exportInfo: String = "",     // destination atteinte, ou motif de l'échec
+    val transcript: String = ""      // texte issu de la transcription (vide = non transcrit)
 )
 
 /**
