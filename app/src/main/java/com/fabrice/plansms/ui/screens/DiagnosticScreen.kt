@@ -123,6 +123,28 @@ fun DiagnosticScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxWidth()
         ) { Text(if (running) "Analyse en cours…" else "Analyser ce numéro") }
 
+        val voicemailLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+        ) {
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    com.fabrice.plansms.data.VoicemailProbe.report(context)
+                }
+                report = result
+                running = false
+            }
+        }
+
+        OutlinedButton(
+            onClick = {
+                running = true
+                report = ""
+                voicemailLauncher.launch("com.android.voicemail.permission.ADD_VOICEMAIL")
+            },
+            enabled = !running,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Sonder la messagerie vocale") }
+
         if (report.isNotEmpty()) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Text(

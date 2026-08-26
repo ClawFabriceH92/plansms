@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
     <!-- Journal d'appels : envoi de SMS groupé aux numéros qui ont appelé (lecture seule) -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <!-- Sonde de la messagerie vocale visuelle (l'audio reste protégé par READ_VOICEMAIL) -->
+    <uses-permission android:name="com.android.voicemail.permission.ADD_VOICEMAIL" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -47,6 +49,12 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Réception d'un audio partagé : message vocal partagé depuis l'app Téléphone -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
             </intent-filter>
         </activity>
 
