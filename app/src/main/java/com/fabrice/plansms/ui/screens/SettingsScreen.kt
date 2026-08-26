@@ -67,6 +67,7 @@ fun SettingsScreen(
     var showTemplates by remember { mutableStateOf(false) }
     var showStorage by remember { mutableStateOf(false) }
     var showDiagnostic by remember { mutableStateOf(false) }
+    var showRelay by remember { mutableStateOf(false) }
     var showCalendars by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var autoUpdate by remember { mutableStateOf(vm.isAutoUpdateEnabled()) }
@@ -97,6 +98,11 @@ fun SettingsScreen(
 
     if (showDiagnostic) {
         DiagnosticScreen(onBack = { showDiagnostic = false }, modifier = modifier)
+        return
+    }
+
+    if (showRelay) {
+        RelayScreen(onBack = { showRelay = false }, modifier = modifier)
         return
     }
 
@@ -394,6 +400,33 @@ fun SettingsScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Rétablir le lexique par défaut") }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
+                Text("Relais SMS", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Transfère automatiquement les SMS reçus sur ce téléphone vers " +
+                        "d'autres numéros et/ou des adresses email, pendant les plages " +
+                        "que tu définis. Hors plage, les messages attendent en file et " +
+                        "partent au créneau suivant.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (com.fabrice.plansms.relay.RelayPrefs.enabled(context))
+                        "✅ Relais en service"
+                    else "Relais à l'arrêt",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (com.fabrice.plansms.relay.RelayPrefs.enabled(context)) Success
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { showRelay = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Configurer le relais SMS")
+                }
             }
         }
 

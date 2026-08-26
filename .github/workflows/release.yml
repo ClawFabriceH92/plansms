@@ -66,6 +66,9 @@ jobs:
           fi
           echo "PLANSMS_KEYSTORE=$KS" >> "$GITHUB_ENV"
 
+      - name: Tests unitaires (règles métier)
+        run: gradle :app:testReleaseUnitTest --no-daemon
+
       - name: Build APK release (signé)
         run: gradle :app:assembleRelease --no-daemon
 

@@ -30,15 +30,32 @@ class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != "android.provider.Telephony.SMS_RECEIVED") return
 
+        val messages = Telephony.SmsMessages.fromIntent(intent) ?: return
+        if (messages.isEmpty()) return
+        val sender = messages.first().originatingAddress ?: return
+        // Un SMS long arrive en plusieurs PDU : on recolle le texte complet.
+        val body = messages.joinToString("") { it.messageBody ?: "" }
+        val receivedAt = System.currentTimeMillis()
+
         val scope = CoroutineScope(Dispatchers.IO)
+
+        // Relais SMS : transfert vers les destinataires configurés (indépendant
+        // de l'auto-réponse, qui a ses propres règles).
+        val pending = goAsync()
+        scope.launch {
+            try {
+                com.fabrice.plansms.relay.SmsRelay.onSmsReceived(context, sender, body, receivedAt)
+            } catch (e: Exception) {
+                AppLogger.e("SmsReceiver", "Relais impossible", e)
+            } finally {
+                pending.finish()
+            }
+        }
+
         scope.launch {
             val db = AppDatabase.get(context)
             val rule = db.autoReplyRuleDao().get() ?: return@launch
             if (!rule.enabled) return@launch
-
-            val messages = Telephony.SmsMessages.fromIntent(intent) ?: return@launch
-            if (messages.isEmpty()) return@launch
-            val sender = messages.first().originatingAddress ?: return@launch
 
             if (!shouldReply(rule, sender)) return@launch
 
