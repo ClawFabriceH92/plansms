@@ -270,6 +270,14 @@ private fun RecordingsContent(vm: PlanSmsViewModel, modifier: Modifier = Modifie
                 color = Danger
             )
         }
+        if (state.transcriptionNote.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                state.transcriptionNote,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         if (recorderError.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
             Text(recorderError, style = MaterialTheme.typography.bodyMedium, color = Danger)

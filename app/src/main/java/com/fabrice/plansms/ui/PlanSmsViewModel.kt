@@ -42,6 +42,7 @@ data class PlanSmsUiState(
     val recordings: List<com.fabrice.plansms.data.VoiceRecording> = emptyList(),
     val transcribingId: Long = 0,       // enregistrement en cours de transcription
     val transcriptionError: String = "",
+    val transcriptionNote: String = "",  // corrections de lexique appliquées
     val bulkSending: Boolean = false,
     val bulkProgress: String = "",      // "2/5" pendant un envoi groupé
     val bulkReport: String = "",        // rapport final "4 envoyés · 1 échec"
@@ -225,12 +226,21 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
     fun exportRecording(r: com.fabrice.plansms.data.VoiceRecording) =
         viewModelScope.launch { repo.exportRecording(r) }
 
+    /** Résumé lisible des corrections de lexique appliquées. */
+    private fun noteOf(fixes: List<String>): String = when {
+        fixes.isEmpty() -> ""
+        fixes.size <= 3 -> "✏️ Lexique : " + fixes.joinToString(", ")
+        else -> "✏️ Lexique : " + fixes.take(3).joinToString(", ") + " (+${fixes.size - 3})"
+    }
+
     /** Transcription audio → texte : moteur hors ligne du téléphone, ou serveur. */
     fun transcribeRecording(r: com.fabrice.plansms.data.VoiceRecording) {
         if (_state.value.transcribingId != 0L) return
         val app = getApplication<Application>()
         val file = java.io.File(r.filePath)
-        _state.value = _state.value.copy(transcribingId = r.id, transcriptionError = "")
+        _state.value = _state.value.copy(
+            transcribingId = r.id, transcriptionError = "", transcriptionNote = ""
+        )
 
         if (com.fabrice.plansms.data.TranscriptionPrefs.mode(app) ==
             com.fabrice.plansms.data.TranscriptionPrefs.MODE_DEVICE
@@ -238,10 +248,11 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
             // SpeechRecognizer exige le thread principal ; viewModelScope y est déjà.
             com.fabrice.plansms.data.OnDeviceTranscriber.transcribe(app, file) { ok, text, error ->
                 viewModelScope.launch {
-                    if (ok) repo.saveTranscript(r, text)
+                    val fixes = if (ok) repo.saveTranscript(r, text) else emptyList()
                     _state.value = _state.value.copy(
                         transcribingId = 0,
-                        transcriptionError = if (ok) "" else error
+                        transcriptionError = if (ok) "" else error,
+                        transcriptionNote = noteOf(fixes)
                     )
                 }
             }
@@ -260,9 +271,11 @@ class PlanSmsViewModel(app: Application) : AndroidViewModel(app) {
                 val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     repo.transcribeRecording(r)
                 }
+                val fixes = if (result.ok) repo.saveTranscript(r, result.text) else emptyList()
                 _state.value = _state.value.copy(
                     transcribingId = 0,
-                    transcriptionError = if (result.ok) "" else result.error
+                    transcriptionError = if (result.ok) "" else result.error,
+                    transcriptionNote = noteOf(fixes)
                 )
             }
         }
