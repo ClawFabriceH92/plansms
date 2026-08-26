@@ -22,9 +22,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +57,7 @@ fun TemplatesScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Template?>(null) }
+    var showLibrary by remember { mutableStateOf(false) }
 
     if (onBack != null) {
         BackHandler { onBack() }
@@ -78,6 +81,11 @@ fun TemplatesScreen(
             Spacer(Modifier.width(6.dp))
             Text("Nouveau modèle")
         }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { showLibrary = true },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("📚 Ajouter des modèles types (${com.fabrice.plansms.data.TemplateLibrary.all.size})") }
         Spacer(Modifier.height(12.dp))
         if (state.templates.isEmpty()) {
             Text(
@@ -102,6 +110,78 @@ fun TemplatesScreen(
                 }
             }
         }
+    }
+
+    if (showLibrary) {
+        val existing = state.templates.map { it.name }.toSet()
+        var selected by remember { mutableStateOf(setOf<String>()) }
+        AlertDialog(
+            onDismissRequest = { showLibrary = false },
+            title = { Text("Modèles types") },
+            text = {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.height(380.dp)
+                ) {
+                    com.fabrice.plansms.data.TemplateLibrary.categories.forEach { category ->
+                        item {
+                            Text(
+                                category.uppercase(),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        }
+                        items(
+                            com.fabrice.plansms.data.TemplateLibrary.all.filter { it.category == category },
+                            key = { it.name }
+                        ) { suggestion ->
+                            val already = suggestion.name in existing
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().clickable(enabled = !already) {
+                                    selected = if (suggestion.name in selected) selected - suggestion.name
+                                    else selected + suggestion.name
+                                }
+                            ) {
+                                Checkbox(
+                                    checked = already || suggestion.name in selected,
+                                    enabled = !already,
+                                    onCheckedChange = {
+                                        selected = if (suggestion.name in selected) selected - suggestion.name
+                                        else selected + suggestion.name
+                                    }
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        suggestion.name + if (already) " (déjà ajouté)" else "",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        suggestion.body,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        com.fabrice.plansms.data.TemplateLibrary.all
+                            .filter { it.name in selected }
+                            .forEach { vm.addTemplate(Template(name = it.name, body = it.body)) }
+                        showLibrary = false
+                    },
+                    enabled = selected.isNotEmpty()
+                ) { Text("Ajouter (${selected.size})") }
+            },
+            dismissButton = { TextButton(onClick = { showLibrary = false }) { Text("Fermer") } }
+        )
     }
 
     if (showCreate) {

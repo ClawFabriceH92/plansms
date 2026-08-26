@@ -262,6 +262,14 @@ private fun RecordingsContent(vm: PlanSmsViewModel, modifier: Modifier = Modifie
             }
         }
 
+        if (state.transcriptionError.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "⚠️ Transcription : ${state.transcriptionError}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Danger
+            )
+        }
         if (recorderError.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
             Text(recorderError, style = MaterialTheme.typography.bodyMedium, color = Danger)
@@ -290,6 +298,16 @@ private fun RecordingsContent(vm: PlanSmsViewModel, modifier: Modifier = Modifie
                         onRename = { renaming = rec },
                         onShare = { shareRecording(context, rec) },
                         onExport = { vm.exportRecording(rec) },
+                        transcribing = state.transcribingId == rec.id,
+                        canTranscribe = com.fabrice.plansms.data.TranscriptionPrefs.isConfigured(context),
+                        onTranscribe = { vm.transcribeRecording(rec) },
+                        onCopyTranscript = {
+                            val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                            clip.setPrimaryClip(
+                                android.content.ClipData.newPlainText("transcription", rec.transcript)
+                            )
+                        },
                         onDelete = { deleting = rec }
                     )
                 }
@@ -378,6 +396,10 @@ private fun RecordingCard(
     onRename: () -> Unit,
     onShare: () -> Unit,
     onExport: () -> Unit,
+    transcribing: Boolean,
+    canTranscribe: Boolean,
+    onTranscribe: () -> Unit,
+    onCopyTranscript: () -> Unit,
     onDelete: () -> Unit
 ) {
     val fmt = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
@@ -401,6 +423,24 @@ private fun RecordingCard(
                     fontSize = 12.sp,
                     color = if (rec.exportStatus == "OK") Success else Danger
                 )
+            }
+            if (rec.transcript.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(8.dp)) {
+                        Text("📝 Transcription", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(rec.transcript, style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = onCopyTranscript) { Text("Copier le texte") }
+                    }
+                }
+            } else if (transcribing) {
+                Text(
+                    "📝 Transcription en cours…",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            } else if (canTranscribe) {
+                TextButton(onClick = onTranscribe) { Text("📝 Transcrire en texte") }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(onClick = onPlay) {

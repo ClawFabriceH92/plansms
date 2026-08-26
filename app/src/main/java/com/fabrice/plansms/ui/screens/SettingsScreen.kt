@@ -223,6 +223,70 @@ fun SettingsScreen(
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(14.dp)) {
+                Text("Transcription audio → texte", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Transcrit les enregistrements et les messages vocaux importés. " +
+                        "Fonctionne avec tout serveur exposant l'API compatible OpenAI " +
+                        "/v1/audio/transcriptions — whisper.cpp, faster-whisper… " +
+                        "Sur ton propre réseau, les enregistrements n'en sortent jamais.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                var trUrl by remember {
+                    mutableStateOf(com.fabrice.plansms.data.TranscriptionPrefs.serverUrl(context))
+                }
+                var trModel by remember {
+                    mutableStateOf(com.fabrice.plansms.data.TranscriptionPrefs.model(context))
+                }
+                var trKey by remember {
+                    mutableStateOf(com.fabrice.plansms.data.TranscriptionPrefs.apiKey(context))
+                }
+                OutlinedTextField(
+                    value = trUrl,
+                    onValueChange = {
+                        trUrl = it
+                        com.fabrice.plansms.data.TranscriptionPrefs.setServerUrl(context, it)
+                    },
+                    label = { Text("Serveur (ex. http://192.168.0.162:8080)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = trModel,
+                    onValueChange = {
+                        trModel = it
+                        com.fabrice.plansms.data.TranscriptionPrefs.setModel(context, it)
+                    },
+                    label = { Text("Modèle (whisper-1, large-v3…)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = trKey,
+                    onValueChange = {
+                        trKey = it
+                        com.fabrice.plansms.data.TranscriptionPrefs.setApiKey(context, it)
+                    },
+                    label = { Text("Clé API (inutile en local)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (trUrl.isBlank())
+                        "Non configuré : le bouton « Transcrire » n'apparaît pas dans Journal → Audio."
+                    else "✅ Configuré — bouton « 📝 Transcrire » disponible sur chaque enregistrement.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (trUrl.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else Success
+                )
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
                 Text("Messages RCS / chat", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(4.dp))
                 Text(

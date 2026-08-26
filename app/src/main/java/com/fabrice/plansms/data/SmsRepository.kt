@@ -38,6 +38,13 @@ class SmsRepository(private val context: Context) {
         return res.message
     }
 
+    /** Transcrit l'enregistrement via le serveur configuré et mémorise le texte. */
+    suspend fun transcribeRecording(r: VoiceRecording): Transcriber.Result {
+        val result = Transcriber.transcribe(context, java.io.File(r.filePath))
+        if (result.ok) recordingDao.update(r.copy(transcript = result.text))
+        return result
+    }
+
     /** Supprime la fiche ET le fichier audio. */
     suspend fun deleteRecording(r: VoiceRecording) {
         try { java.io.File(r.filePath).delete() } catch (_: Exception) {}
