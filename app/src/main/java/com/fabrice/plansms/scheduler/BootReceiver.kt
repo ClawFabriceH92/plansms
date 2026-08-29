@@ -61,6 +61,7 @@ class BootReceiver : BroadcastReceiver() {
             // et on réarme le réveil du prochain créneau.
             try {
                 com.fabrice.plansms.relay.SmsRelay.flush(context)
+                com.fabrice.plansms.relay.SmsRelay.scheduleDailyDigest(context)
             } catch (e: Exception) {
                 AppLogger.e("BootReceiver", "Reprise du relais SMS impossible", e)
             }

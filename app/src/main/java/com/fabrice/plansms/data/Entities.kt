@@ -180,7 +180,8 @@ data class RelayItem(
     val attempts: Int = 0,
     val lastAttemptAt: Long = 0,
     val sentAt: Long = 0,
-    val detail: String = ""      // destinations atteintes, ou motif de l'échec
+    val detail: String = "",     // destinations atteintes, ou motif de l'échec
+    val origin: String = "SMS"   // SMS (broadcast) ou RCS (capture de notification)
 )
 
 object RelayStatus {

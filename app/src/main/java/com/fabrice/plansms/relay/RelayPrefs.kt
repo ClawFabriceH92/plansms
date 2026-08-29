@@ -17,6 +17,8 @@ object RelayPrefs {
     private const val K_RETENTION = "retention_days"
     private const val K_ATTEMPTS = "max_attempts"
     private const val K_SELF = "self_number"
+    private const val K_RCS = "relay_rcs"
+    private const val K_DIGEST = "daily_digest"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -61,6 +63,20 @@ object RelayPrefs {
 
     fun setSelfNumber(context: Context, value: String) {
         prefs(context).edit().putString(K_SELF, value.trim()).apply()
+    }
+
+    /** Relayer aussi les messages RCS captés par l'accès aux notifications. */
+    fun relayRcs(context: Context): Boolean = prefs(context).getBoolean(K_RCS, true)
+
+    fun setRelayRcs(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(K_RCS, on).apply()
+    }
+
+    /** Bilan quotidien vers 19h30 : chien de garde du relais. */
+    fun dailyDigest(context: Context): Boolean = prefs(context).getBoolean(K_DIGEST, false)
+
+    fun setDailyDigest(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(K_DIGEST, on).apply()
     }
 
     private fun split(raw: String?): List<String> =

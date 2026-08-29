@@ -8,6 +8,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.fabrice.plansms.MainActivity
 import com.fabrice.plansms.data.AppDatabase
@@ -38,24 +39,69 @@ object SmsRelay {
      */
     private val gate = Mutex()
 
-    /** Appelé à la réception d'un SMS. Met en file, et transfère si la plage est ouverte. */
+    /**
+     * Appelé à la réception d'un SMS : mise en file (rapide), puis l'envoi part
+     * dans un job WorkManager expédié — jamais dans le receiver lui-même, dont
+     * Android limite la durée de vie à quelques secondes.
+     */
     suspend fun onSmsReceived(context: Context, sender: String, body: String, receivedAt: Long) {
-        if (!RelayPrefs.enabled(context)) return
-        if (RelayPrefs.numbers(context).isEmpty() && RelayPrefs.emails(context).isEmpty()) {
-            AppLogger.w("SmsRelay", "SMS reçu mais aucun destinataire configuré")
-            return
-        }
-        // Anti-boucle : un SMS venant d'un destinataire du relais n'est pas relayé,
-        // sinon deux téléphones se renvoient le même message indéfiniment.
-        if (isOwnCircuit(context, sender)) {
-            AppLogger.i("SmsRelay", "SMS de $sender ignoré (destinataire du relais)")
-            return
-        }
-
+        if (!accepts(context, sender)) return
         val dao = AppDatabase.get(context).relayItemDao()
         val id = dao.insert(RelayItem(sender = sender, body = body, receivedAt = receivedAt))
         AppLogger.i("SmsRelay", "SMS de $sender mis en file (#$id)")
-        flush(context)
+        enqueueFlushNow(context)
+    }
+
+    /**
+     * Message RCS capté par l'accès aux notifications. Un vrai SMS déclenche
+     * AUSSI une notification : on écarte donc ce qui vient déjà de passer par
+     * le broadcast (RelayDedup), pour ne jamais relayer deux fois.
+     */
+    suspend fun onRcsCaptured(context: Context, sender: String, body: String, receivedAt: Long) {
+        if (!RelayPrefs.relayRcs(context)) return
+        if (body.isBlank()) return
+        if (!accepts(context, sender)) return
+
+        val dao = AppDatabase.get(context).relayItemDao()
+        val recent = dao.since(receivedAt - RelayDedup.WINDOW_MS)
+            .map { RelayDedup.Seen(it.sender, it.body, it.receivedAt) }
+        if (RelayDedup.isDuplicate(sender, body, receivedAt, recent)) {
+            AppLogger.i("SmsRelay", "Capture RCS de $sender ignorée (déjà relayée en SMS)")
+            return
+        }
+
+        val id = dao.insert(
+            RelayItem(sender = sender, body = body, receivedAt = receivedAt, origin = "RCS")
+        )
+        AppLogger.i("SmsRelay", "RCS de $sender mis en file (#$id)")
+        enqueueFlushNow(context)
+    }
+
+    /** Conditions communes : relais actif, destinataires présents, pas d'anti-boucle. */
+    private fun accepts(context: Context, sender: String): Boolean {
+        if (!RelayPrefs.enabled(context)) return false
+        if (RelayPrefs.numbers(context).isEmpty() && RelayPrefs.emails(context).isEmpty()) {
+            AppLogger.w("SmsRelay", "Message reçu mais aucun destinataire configuré")
+            return false
+        }
+        // Anti-boucle : un message venant d'un destinataire du relais n'est pas
+        // relayé, sinon deux téléphones se renvoient le même message indéfiniment.
+        if (isOwnCircuit(context, sender)) {
+            AppLogger.i("SmsRelay", "Message de $sender ignoré (destinataire du relais)")
+            return false
+        }
+        return true
+    }
+
+    /** Vidage immédiat de la file, en job expédié (survit à la mort du process). */
+    fun enqueueFlushNow(context: Context) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            WORK_FLUSH,
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<RelayWorker>()
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .build()
+        )
     }
 
     /**
@@ -87,7 +133,8 @@ object SmsRelay {
         val dao = AppDatabase.get(context).relayItemDao()
         val numbers = RelayPrefs.numbers(context).filterNot { same(it, item.sender) }
         val emails = RelayPrefs.emails(context)
-        val text = "De ${item.sender} : ${item.body}"
+        val tag = if (item.origin == "RCS") " (RCS)" else ""
+        val text = "De ${item.sender}$tag : ${item.body}"
         val now = System.currentTimeMillis()
 
         val done = mutableListOf<String>()
@@ -200,6 +247,82 @@ object SmsRelay {
                 .build()
         )
         AppLogger.i("SmsRelay", "Nouvelle tentative dans ${delayMillis / 60_000} min")
+    }
+
+    // --- Bilan quotidien (chien de garde) -------------------------------------
+
+    private const val WORK_DIGEST = "plansms-relay-digest"
+    private const val DIGEST_HOUR = 19
+    private const val DIGEST_MINUTE = 30
+
+    /** Programme (ou annule) le bilan quotidien de 19h30. */
+    fun scheduleDailyDigest(context: Context) {
+        val work = WorkManager.getInstance(context)
+        if (!RelayPrefs.dailyDigest(context)) {
+            work.cancelUniqueWork(WORK_DIGEST)
+            return
+        }
+        val now = java.time.ZonedDateTime.now()
+        var next = now.withHour(DIGEST_HOUR).withMinute(DIGEST_MINUTE).withSecond(0).withNano(0)
+        if (!next.isAfter(now)) next = next.plusDays(1)
+        val delay = java.time.Duration.between(now, next).toMillis()
+        work.enqueueUniqueWork(
+            WORK_DIGEST,
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<RelayDigestWorker>()
+                .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+                .build()
+        )
+        AppLogger.i("SmsRelay", "Bilan quotidien programmé dans ${delay / 60_000} min")
+    }
+
+    /** Compose et envoie le bilan du jour, puis se reprogramme pour demain. */
+    suspend fun runDailyDigest(context: Context) {
+        try {
+            if (!RelayPrefs.dailyDigest(context) || !RelayPrefs.enabled(context)) return
+            val db = AppDatabase.get(context)
+            val startOfDay = java.time.LocalDate.now()
+                .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val today = db.relayItemDao().since(startOfDay)
+            val queuedNow = db.relayItemDao().queued().size
+            val label = java.text.SimpleDateFormat("EEEE d MMMM", java.util.Locale.FRANCE)
+                .format(java.util.Date())
+            val digest = RelayDigest.compose(label, today, queuedNow)
+
+            val emails = RelayPrefs.emails(context)
+            var delivered = false
+            for (email in emails) {
+                if (RelayMailer.sendRaw(context, email, digest.subject, digest.body) == null) {
+                    delivered = true
+                }
+            }
+            if (!delivered) notifyDigest(context, digest.subject, digest.body)
+            AppLogger.i("SmsRelay", "Bilan quotidien envoyé (${today.size} message(s) aujourd'hui)")
+        } finally {
+            scheduleDailyDigest(context)
+        }
+    }
+
+    private fun notifyDigest(context: Context, title: String, body: String) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL, "Relais SMS", NotificationManager.IMPORTANCE_HIGH)
+                )
+            }
+            nm.notify(
+                4201,
+                NotificationCompat.Builder(context, CHANNEL)
+                    .setSmallIcon(android.R.drawable.stat_notify_chat)
+                    .setContentTitle(title)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                    .setAutoCancel(true)
+                    .build()
+            )
+        } catch (e: Exception) {
+            AppLogger.e("SmsRelay", "Notification de bilan impossible", e)
+        }
     }
 
     private suspend fun purge(context: Context) {

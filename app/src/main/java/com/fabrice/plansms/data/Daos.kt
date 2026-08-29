@@ -174,6 +174,9 @@ interface RelayItemDao {
     @Query("SELECT COUNT(*) FROM relay_items WHERE status = 'QUEUED'")
     fun observeQueuedCount(): Flow<Int>
 
+    @Query("SELECT * FROM relay_items WHERE receivedAt >= :since ORDER BY receivedAt ASC")
+    suspend fun since(since: Long): List<RelayItem>
+
     @Insert
     suspend fun insert(item: RelayItem): Long
 

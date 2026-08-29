@@ -19,6 +19,16 @@ object RelayMailer {
 
     /** Retourne null si l'envoi a réussi, sinon le motif de l'échec. */
     fun send(context: Context, to: String, sender: String, body: String, receivedAt: Long): String? {
+        val stamp = SimpleDateFormat("dd/MM/yyyy à HH:mm", Locale.FRANCE).format(Date(receivedAt))
+        return sendRaw(
+            context, to,
+            subject = "[SMS Relay] De $sender",
+            body = "De : $sender\nReçu le $stamp\n\n$body"
+        )
+    }
+
+    /** Envoi SMTP brut (sujet + corps). Retourne null si OK, sinon le motif. */
+    fun sendRaw(context: Context, to: String, subject: String, body: String): String? {
         val host = StoragePrefs.mailHost(context)
         if (host.isBlank()) return "SMTP non configuré"
         return try {
@@ -46,15 +56,14 @@ object RelayMailer {
                 }
             )
             val from = StoragePrefs.mailFrom(context).ifBlank { user }
-            val stamp = SimpleDateFormat("dd/MM/yyyy à HH:mm", Locale.FRANCE).format(Date(receivedAt))
             val message = javax.mail.internet.MimeMessage(session).apply {
                 setFrom(javax.mail.internet.InternetAddress(from))
                 setRecipients(
                     javax.mail.Message.RecipientType.TO,
                     javax.mail.internet.InternetAddress.parse(to)
                 )
-                subject = "[SMS Relay] De $sender"
-                setText("De : $sender\nReçu le $stamp\n\n$body", "UTF-8")
+                setSubject(subject, "UTF-8")
+                setText(body, "UTF-8")
             }
             javax.mail.Transport.send(message)
             AppLogger.i("RelayMailer", "SMS relayé par email → $to")
