@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         GroupMember::class, AutoReplyRule::class, VoiceRecording::class, InboundMessage::class,
         RelaySlot::class, RelayException::class, RelayItem::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -37,7 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plansms.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build().also { instance = it }
             }
 
@@ -124,6 +124,13 @@ abstract class AppDatabase : RoomDatabase() {
                         "sentAt INTEGER NOT NULL DEFAULT 0, " +
                         "detail TEXT NOT NULL DEFAULT '')"
                 )
+            }
+        }
+
+        /** Relais SMS : origine du message (SMS reçu, ou RCS capté par notification). */
+        private val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE relay_items ADD COLUMN origin TEXT NOT NULL DEFAULT 'SMS'")
             }
         }
     }

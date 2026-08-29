@@ -67,8 +67,22 @@ class MessageNotificationListener : NotificationListenerService() {
                 val number = if (digits.length >= 9) {
                     title
                 } else {
-                    ContactsHelper.phoneForDisplayName(appContext, title) ?: return@launch
+                    ContactsHelper.phoneForDisplayName(appContext, title)
                 }
+
+                // Relais SMS : un RCS n'existe QUE côté notifications — c'est ici
+                // qu'il part. Le dédoublonnage écarte les vrais SMS déjà relayés.
+                if (text.isNotBlank()) {
+                    try {
+                        com.fabrice.plansms.relay.SmsRelay.onRcsCaptured(
+                            appContext, number ?: title, text, postedAt
+                        )
+                    } catch (e: Exception) {
+                        AppLogger.e("NotifListener", "Relais RCS impossible", e)
+                    }
+                }
+
+                if (number == null) return@launch
                 val key = CallLogRepository.matchKey(number)
                 if (key.length < 9) return@launch
 

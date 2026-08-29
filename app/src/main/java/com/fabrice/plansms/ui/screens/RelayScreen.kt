@@ -1,6 +1,8 @@
 package com.fabrice.plansms.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -194,7 +196,104 @@ private fun RelayStatusTab(db: AppDatabase) {
             }
         }
 
+        RelayReliabilityCard()
         RelayOptionsCard()
+    }
+}
+
+/** Fiabilité : exemption batterie, relais RCS, bilan quotidien. */
+@Composable
+private fun RelayReliabilityCard() {
+    val context = LocalContext.current
+    val powerManager = remember {
+        context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+    }
+    var batteryExempt by remember {
+        mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
+    }
+    val batteryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { batteryExempt = powerManager.isIgnoringBatteryOptimizations(context.packageName) }
+    var rcs by remember { mutableStateOf(RelayPrefs.relayRcs(context)) }
+    var digest by remember { mutableStateOf(RelayPrefs.dailyDigest(context)) }
+    val listenerOn = com.fabrice.plansms.notif.MessageNotificationListener.isEnabled(context)
+
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Fiabilité", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                if (batteryExempt) "✅ Exempté de l'optimisation batterie — Android ne tuera pas le relais."
+                else "⚠️ Android peut endormir le relais au bout de quelques jours d'inactivité de l'app.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (batteryExempt) Success else MaterialTheme.colorScheme.error
+            )
+            if (!batteryExempt) {
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = {
+                        try {
+                            batteryLauncher.launch(
+                                android.content.Intent(
+                                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    android.net.Uri.parse("package:" + context.packageName)
+                                )
+                            )
+                        } catch (_: Exception) {
+                            try {
+                                batteryLauncher.launch(
+                                    android.content.Intent(
+                                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                                    )
+                                )
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Désactiver l'optimisation batterie pour PlanSMS") }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Relayer aussi les messages RCS", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (!rcs) "Désactivé"
+                        else if (listenerOn) "Captés via les notifications — dédoublonnés des vrais SMS."
+                        else "⚠️ Accès aux notifications non activé (Réglages → Messages RCS / chat).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (rcs && !listenerOn) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = rcs,
+                    onCheckedChange = { rcs = it; RelayPrefs.setRelayRcs(context, it) }
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Bilan quotidien à 19h30", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Email récapitulatif (ou notification) : sa présence chaque soir " +
+                            "prouve que le relais est vivant.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = digest,
+                    onCheckedChange = {
+                        digest = it
+                        RelayPrefs.setDailyDigest(context, it)
+                        SmsRelay.scheduleDailyDigest(context)
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -564,12 +663,19 @@ private fun RelaySlotsTab(db: AppDatabase) {
 
 @Composable
 private fun SlotDialog(onDismiss: () -> Unit, onConfirm: (Int, Int, Int) -> Unit) {
-    var daysMask by remember { mutableStateOf(0b0011111) }
-    var start by remember { mutableStateOf("08:00") }
-    var end by remember { mutableStateOf("19:00") }
-    val startMin = parseTime(start)
-    val endMin = parseTime(end)
-    val valid = daysMask != 0 && startMin != null && endMin != null && endMin > startMin
+    val context = LocalContext.current
+    var daysMask by remember { mutableIntStateOf(0b0011111) }
+    var startMin by remember { mutableIntStateOf(8 * 60) }
+    var endMin by remember { mutableIntStateOf(19 * 60) }
+    val valid = daysMask != 0 && endMin > startMin
+
+    fun pickTime(current: Int, onPicked: (Int) -> Unit) {
+        android.app.TimePickerDialog(
+            context,
+            { _, hour, minute -> onPicked(hour * 60 + minute) },
+            current / 60, current % 60, true
+        ).show()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -589,21 +695,15 @@ private fun SlotDialog(onDismiss: () -> Unit, onConfirm: (Int, Int, Int) -> Unit
                 }
                 Spacer(Modifier.height(12.dp))
                 Row {
-                    OutlinedTextField(
-                        value = start,
-                        onValueChange = { start = it },
-                        label = { Text("Début (hh:mm)") },
-                        singleLine = true,
+                    OutlinedButton(
+                        onClick = { pickTime(startMin) { startMin = it } },
                         modifier = Modifier.weight(1f)
-                    )
+                    ) { Text("Début : ${RelaySchedule.timeLabel(startMin)}") }
                     Spacer(Modifier.width(10.dp))
-                    OutlinedTextField(
-                        value = end,
-                        onValueChange = { end = it },
-                        label = { Text("Fin (hh:mm)") },
-                        singleLine = true,
+                    OutlinedButton(
+                        onClick = { pickTime(endMin) { endMin = it } },
                         modifier = Modifier.weight(1f)
-                    )
+                    ) { Text("Fin : ${RelaySchedule.timeLabel(endMin)}") }
                 }
                 if (!valid) {
                     Spacer(Modifier.height(8.dp))
@@ -617,7 +717,7 @@ private fun SlotDialog(onDismiss: () -> Unit, onConfirm: (Int, Int, Int) -> Unit
         },
         confirmButton = {
             TextButton(
-                onClick = { if (valid) onConfirm(daysMask, startMin!!, endMin!!) },
+                onClick = { if (valid) onConfirm(daysMask, startMin, endMin) },
                 enabled = valid
             ) { Text("Ajouter") }
         },
@@ -627,23 +727,26 @@ private fun SlotDialog(onDismiss: () -> Unit, onConfirm: (Int, Int, Int) -> Unit
 
 @Composable
 private fun ExceptionDialog(onDismiss: () -> Unit, onConfirm: (Long, Boolean, String) -> Unit) {
-    var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    val context = LocalContext.current
+    var day by remember { mutableStateOf(LocalDate.now()) }
     var active by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
-    val day = try { LocalDate.parse(date.trim()) } catch (_: Exception) { null }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Jour d'exception") },
         text = {
             Column {
-                OutlinedTextField(
-                    value = date,
-                    onValueChange = { date = it },
-                    label = { Text("Date (AAAA-MM-JJ)") },
-                    singleLine = true,
+                OutlinedButton(
+                    onClick = {
+                        android.app.DatePickerDialog(
+                            context,
+                            { _, y, m, d -> day = LocalDate.of(y, m + 1, d) },
+                            day.year, day.monthValue - 1, day.dayOfMonth
+                        ).show()
+                    },
                     modifier = Modifier.fillMaxWidth()
-                )
+                ) { Text("📅 " + dayLabel(day.toEpochDay())) }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
@@ -665,20 +768,11 @@ private fun ExceptionDialog(onDismiss: () -> Unit, onConfirm: (Long, Boolean, St
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (day == null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Date illisible — format attendu : 2026-08-31.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { day?.let { onConfirm(it.toEpochDay(), active, note.trim()) } },
-                enabled = day != null
+                onClick = { onConfirm(day.toEpochDay(), active, note.trim()) }
             ) { Text("Ajouter") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
@@ -730,7 +824,11 @@ private fun RelayItemCard(item: RelayItem) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(item.sender, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    item.sender + if (item.origin == "RCS") "  · RCS" else "",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall
+                )
                 Text(
                     statusLabel(item.status),
                     style = MaterialTheme.typography.labelLarge,
@@ -764,15 +862,6 @@ private fun statusLabel(status: String): String = when (status) {
     RelayStatus.QUEUED -> "en file"
     RelayStatus.PARTIAL -> "partiel"
     else -> "échec"
-}
-
-private fun parseTime(value: String): Int? {
-    val parts = value.trim().split(':', 'h', 'H')
-    if (parts.size < 2) return null
-    val hours = parts[0].trim().toIntOrNull() ?: return null
-    val minutes = parts[1].trim().ifBlank { "0" }.toIntOrNull() ?: return null
-    if (hours !in 0..23 || minutes !in 0..59) return null
-    return hours * 60 + minutes
 }
 
 private fun stampLabel(millis: Long): String =

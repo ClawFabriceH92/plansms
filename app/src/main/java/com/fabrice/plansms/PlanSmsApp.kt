@@ -17,6 +17,7 @@ class PlanSmsApp : Application() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 SmsRelay.flush(this@PlanSmsApp)
+                SmsRelay.scheduleDailyDigest(this@PlanSmsApp)
             } catch (e: Exception) {
                 AppLogger.e("PlanSmsApp", "Reprise du relais SMS impossible", e)
             }
