@@ -165,4 +165,14 @@ class SmsRulesTest {
         val sun = Calendar.getInstance().apply { timeInMillis = cal(2026, 8, 23, 12, 0) } // dimanche
         assertEquals(7, SmsRules.dayOfWeek(sun))
     }
+
+    @Test
+    fun resolveTemplate_jour_date_heure_du_rdv() {
+        // Mercredi 2 septembre 2026, 14h30
+        val rdv = cal(2026, 9, 2, 14, 30)
+        val out = com.fabrice.plansms.logic.SmsRules.resolveTemplate(
+            "RDV {{jour}} {{date}} à {{heure}} avec {{prenom}}", "Fabrice Heuvrard", rdv
+        )
+        assertEquals("RDV mercredi 02/09/2026 à 14:30 avec Fabrice", out)
+    }
 }

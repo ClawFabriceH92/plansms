@@ -14,6 +14,11 @@ object CalendarPrefs {
     private const val KEY_REMINDER = "rdv_reminder_enabled"
 
     const val DEFAULT_CONFIRM_MESSAGE =
+        "Bonjour, nous avons rendez-vous {{jour}} {{date}} à {{heure}}. " +
+            "En cas d'indisponibilité de votre part, merci de me prévenir. Cordialement."
+
+    /** Ancien texte par défaut (avant les variables) : remplacé silencieusement par le nouveau. */
+    private const val LEGACY_CONFIRM_MESSAGE =
         "Bonjour, nous avons rendez-vous demain. En cas d'indisponibilité de votre part, merci de me prévenir. Cordialement."
 
     private fun prefs(context: Context) =
@@ -29,9 +34,12 @@ object CalendarPrefs {
         prefs(context).edit().putStringSet(KEY_HIDDEN, current).apply()
     }
 
-    fun confirmMessage(context: Context): String =
-        prefs(context).getString(KEY_CONFIRM_MSG, null)?.takeIf { it.isNotBlank() }
-            ?: DEFAULT_CONFIRM_MESSAGE
+    fun confirmMessage(context: Context): String {
+        val stored = prefs(context).getString(KEY_CONFIRM_MSG, null)?.takeIf { it.isNotBlank() }
+        // L'ancien défaut (sans jour ni heure) n'a jamais été personnalisé : on le remplace.
+        if (stored == null || stored == LEGACY_CONFIRM_MESSAGE) return DEFAULT_CONFIRM_MESSAGE
+        return stored
+    }
 
     fun setConfirmMessage(context: Context, message: String) {
         prefs(context).edit().putString(KEY_CONFIRM_MSG, message.trim()).apply()
