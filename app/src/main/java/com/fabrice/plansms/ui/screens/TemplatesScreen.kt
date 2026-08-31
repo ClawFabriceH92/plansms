@@ -89,7 +89,7 @@ fun TemplatesScreen(
         Spacer(Modifier.height(12.dp))
         if (state.templates.isEmpty()) {
             Text(
-                "Aucun modèle. Crée des modèles avec des variables : {{prenom}}, {{date}}, {{heure}}",
+                "Aucun modèle. Crée des modèles avec des variables : {{prenom}}, {{jour}}, {{date}}, {{heure}}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -255,7 +255,7 @@ private fun TemplateDialog(
                 OutlinedTextField(
                     value = body,
                     onValueChange = { body = it },
-                    label = { Text("Message ({{prenom}}, {{date}}, {{heure}}…)") },
+                    label = { Text("Message ({{prenom}}, {{jour}}, {{date}}, {{heure}}…)") },
                     minLines = 3
                 )
             }

@@ -230,10 +230,20 @@ fun ConfirmRdvScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "Texte mémorisé pour la prochaine fois. Variables : {{prenom}}, {{nom}}, {{date}}, {{heure}} (heure du RDV).",
+                    "Texte mémorisé pour la prochaine fois. Variables : {{prenom}}, {{nom}}, " +
+                        "{{jour}}, {{date}}, {{heure}} — remplacées par le jour et l'heure DU RDV " +
+                        "de chaque destinataire.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                recipients.firstOrNull()?.let { (_, name, start) ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Aperçu : " + com.fabrice.plansms.logic.SmsRules.resolveTemplate(text, name, start),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
 
                 Spacer(Modifier.height(10.dp))
                 if (state.bulkSending) {

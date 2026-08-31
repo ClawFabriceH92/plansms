@@ -107,7 +107,8 @@ object SmsRules {
     /**
      * Résout les variables d'un modèle :
      * {{prenom}} → premier mot du nom de contact · {{nom}} → nom complet
-     * {{date}} → date du jour (JJ/MM/AAAA) · {{heure}} → HH:MM
+     * {{jour}} → jour de la semaine (« mercredi ») · {{date}} → JJ/MM/AAAA · {{heure}} → HH:MM
+     * La date/heure utilisée est celle passée en paramètre — pour un RDV, celle du RDV.
      */
     fun resolveTemplate(template: String, contactName: String, dateMillis: Long): String {
         var out = template
@@ -117,8 +118,11 @@ object SmsRules {
             cal.get(Calendar.DAY_OF_MONTH), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
         val h = String.format(Locale.FRANCE, "%02d:%02d",
             cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
+        val weekday = java.text.SimpleDateFormat("EEEE", Locale.FRANCE)
+            .format(java.util.Date(dateMillis))
         out = out.replace("{{prenom}}", first)
         out = out.replace("{{nom}}", contactName)
+        out = out.replace("{{jour}}", weekday)
         out = out.replace("{{date}}", d)
         out = out.replace("{{heure}}", h)
         return out
