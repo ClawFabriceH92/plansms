@@ -69,5 +69,8 @@ class BootReceiver : BroadcastReceiver() {
 
         // Réarme le rappel 15h des RDV du lendemain (jours ouvrés)
         RdvReminder.schedule(context)
+
+        // Icône d'état (répondeur / relais actifs)
+        com.fabrice.plansms.util.ActiveStatusNotifier.refresh(context)
     }
 }

@@ -27,6 +27,7 @@ object RelayPrefs {
 
     fun setEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean(K_ENABLED, on).apply()
+        com.fabrice.plansms.util.ActiveStatusNotifier.refresh(context)
     }
 
     fun numbers(context: Context): List<String> = split(prefs(context).getString(K_NUMBERS, ""))

@@ -43,6 +43,7 @@ object CallResponder {
 
     fun setEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean(K_ENABLED, on).apply()
+        com.fabrice.plansms.util.ActiveStatusNotifier.refresh(context)
     }
 
     fun message(context: Context): String =

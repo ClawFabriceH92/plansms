@@ -12,6 +12,9 @@ class PlanSmsApp : Application() {
         super.onCreate()
         AppLogger.init(this, BuildConfig.VERSION_NAME)
 
+        // Icône d'état (répondeur / relais actifs) : restaurée à chaque démarrage
+        com.fabrice.plansms.util.ActiveStatusNotifier.refresh(this)
+
         // Relais SMS : à chaque ouverture, on reprend la file d'attente et on
         // réarme le réveil — un SMS reçu pendant que l'app dormait ne se perd pas.
         CoroutineScope(Dispatchers.IO).launch {
