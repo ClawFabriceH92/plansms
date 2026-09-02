@@ -105,6 +105,18 @@
             </intent-filter>
         </service>
 
+        <!-- Tuile « Répondeur SMS » dans les réglages rapides -->
+        <service
+            android:name=".scheduler.ResponderTileService"
+            android:exported="true"
+            android:label="Répondeur SMS"
+            android:icon="@android:drawable/stat_notify_voicemail"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".scheduler.UpdateReceiver"
             android:exported="true">
