@@ -8,6 +8,9 @@ import android.content.Context
 import android.content.Intent
 import android.telephony.TelephonyManager
 import com.fabrice.plansms.util.AppLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Option « proposer l'enregistrement pendant un appel » : quand un appel
@@ -20,6 +23,12 @@ class CallPromptReceiver : BroadcastReceiver() {
         const val CHANNEL_ID = "plansms_call_prompt"
         private const val NOTIF_ID = 4211
 
+        // État de l'appel entrant en cours, pour le répondeur SMS : le broadcast
+        // arrive plusieurs fois (avec puis sans numéro), on recolle la séquence
+        // SONNE → (DÉCROCHÉ) → RACCROCHÉ.
+        private var ringingNumber: String = ""
+        private var wasAnswered = false
+
         fun cancel(context: Context) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(NOTIF_ID)
@@ -28,10 +37,40 @@ class CallPromptReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
-        if (!RecorderPrefs.promptOnCall(context) && !RecorderPrefs.overlayButton(context)) return
 
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
         val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER).orEmpty()
+
+        // --- Répondeur SMS : suit l'appel entrant, répond quand il se termine ---
+        when (state) {
+            TelephonyManager.EXTRA_STATE_RINGING -> {
+                if (number.isNotBlank()) ringingNumber = number
+                wasAnswered = false
+            }
+            TelephonyManager.EXTRA_STATE_OFFHOOK ->
+                if (ringingNumber.isNotBlank()) wasAnswered = true
+            TelephonyManager.EXTRA_STATE_IDLE -> {
+                val caller = ringingNumber
+                val answered = wasAnswered
+                ringingNumber = ""
+                wasAnswered = false
+                if (caller.isNotBlank() && com.fabrice.plansms.scheduler.CallResponder.enabled(context)) {
+                    val pending = goAsync()
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            com.fabrice.plansms.scheduler.CallResponder.onCallEnded(context, caller, answered)
+                        } catch (e: Exception) {
+                            AppLogger.e("CallPrompt", "Répondeur SMS impossible", e)
+                        } finally {
+                            pending.finish()
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Proposition d'enregistrement / bouton flottant (options dédiées) ---
+        if (!RecorderPrefs.promptOnCall(context) && !RecorderPrefs.overlayButton(context)) return
 
         when (state) {
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
