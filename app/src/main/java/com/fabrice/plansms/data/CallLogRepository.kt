@@ -165,6 +165,27 @@ object CallLogRepository {
         else -> false
     }
 
+    private val PHONE_IN_TEXT = Regex("(?:\\+|0)[0-9][0-9 .\\-/()]{7,18}[0-9]")
+
+    /**
+     * Cherche dans des textes libres (titre d'événement, lieu, description…)
+     * un numéro capable de recevoir un SMS. Retourne le premier trouvé,
+     * normalisé, ou null. Les fixes, dates et heures sont écartés : il faut
+     * au moins 9 chiffres ET que la nature du numéro soit mobile/étranger.
+     */
+    fun extractSmsCapable(vararg texts: String?): String? {
+        for (text in texts) {
+            if (text.isNullOrBlank()) continue
+            for (match in PHONE_IN_TEXT.findAll(text)) {
+                val digits = match.value.filter { it.isDigit() }
+                if (digits.length !in 9..15) continue
+                val candidate = (if (match.value.trimStart().startsWith("+")) "+" else "") + digits
+                if (canReceiveSms(candidate)) return normalize(candidate)
+            }
+        }
+        return null
+    }
+
     /** Libellé court de la nature du numéro (affiché sur les numéros écartés). */
     fun kindLabel(number: String): String = when (kindOf(number)) {
         NumberKind.MOBILE_FR -> "mobile"

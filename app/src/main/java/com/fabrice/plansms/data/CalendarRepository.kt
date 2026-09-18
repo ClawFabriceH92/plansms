@@ -40,7 +40,8 @@ data class TomorrowRdv(
     val contactName: String,         // contact trouvé par email ("" si non trouvé)
     val phone: String,               // numéro du contact trouvé ("" si non trouvé)
     val suggestions: List<ContactsHelper.PhoneContact> = emptyList(), // candidats par nom (jamais auto-associés)
-    val suggestionStrong: Boolean = false   // true = match prénom+nom sans ambiguïté ; false = doute → confirmation
+    val suggestionStrong: Boolean = false,  // true = match prénom+nom sans ambiguïté ; false = doute → confirmation
+    val phoneFromEvent: Boolean = false     // true = numéro repris du titre/lieu/description de l'événement
 )
 
 /** Résultat de la lecture des RDV du jour cible (demain, ou lundi si on est vendredi/week-end). */
@@ -243,7 +244,8 @@ object CalendarRepository {
             CalendarContract.Instances.BEGIN,
             CalendarContract.Instances.END,
             CalendarContract.Instances.EVENT_LOCATION,
-            CalendarContract.Instances.CALENDAR_ID
+            CalendarContract.Instances.CALENDAR_ID,
+            CalendarContract.Instances.DESCRIPTION
         )
         val withEmail = mutableListOf<TomorrowRdv>()
         var withoutEmail = 0
@@ -263,7 +265,11 @@ object CalendarRepository {
                 if (begin < start || begin >= end) continue   // borne stricte sur demain
                 val attendees = readAttendeeInfos(context, eventId)
                     .filter { it.email.lowercase() !in owners }
-                if (attendees.isEmpty()) { withoutEmail++; continue }
+                // Numéro écrit dans l'événement lui-même (titre, lieu, description)
+                val eventPhone = CallLogRepository.extractSmsCapable(
+                    c.getString(2), c.getString(5), c.getString(7)
+                )
+                if (attendees.isEmpty() && eventPhone == null) { withoutEmail++; continue }
 
                 val event = CalendarEvent(
                     id = eventId,
@@ -289,7 +295,22 @@ object CalendarRepository {
                 }
                 if (matched != null) { withEmail.add(matched); continue }
 
-                // 2. Rapprochement par nom/prénom (participant ou début d'email) — simple proposition
+                // 2. Numéro écrit dans l'événement : fiable, c'est toi qui l'y as mis
+                if (eventPhone != null) {
+                    val first = attendees.firstOrNull()
+                    withEmail.add(
+                        TomorrowRdv(
+                            event = event,
+                            email = first?.email ?: "",
+                            attendeeName = first?.name ?: "",
+                            contactName = "", phone = eventPhone,
+                            phoneFromEvent = true
+                        )
+                    )
+                    continue
+                }
+
+                // 3. Rapprochement par nom/prénom (participant ou début d'email) — simple proposition
                 val first = attendees.first()
                 if (phoneContacts == null) phoneContacts = ContactsHelper.allPhoneContacts(context)
                 val matches = ContactsHelper.suggestByName(phoneContacts!!, first.name, first.email)
@@ -334,7 +355,9 @@ object CalendarRepository {
             CalendarContract.Instances.EVENT_ID,
             CalendarContract.Instances.TITLE,
             CalendarContract.Instances.BEGIN,
-            CalendarContract.Instances.CALENDAR_ID
+            CalendarContract.Instances.CALENDAR_ID,
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.DESCRIPTION
         )
         val result = mutableListOf<UnresolvedMeeting>()
         val cursor = try {
@@ -351,6 +374,11 @@ object CalendarRepository {
                 val attendees = readAttendeeInfos(context, eventId)
                     .filter { it.email.lowercase() !in owners }
                 if (attendees.isEmpty()) continue
+                // Un numéro déjà écrit dans l'événement : le RDV est couvert
+                if (CallLogRepository.extractSmsCapable(
+                        c.getString(2), c.getString(5), c.getString(6)
+                    ) != null
+                ) continue
                 // Un participant avec numéro suffit : le RDV est couvert
                 if (attendees.any { findContactPhone(context, it.email) != null }) continue
                 val first = attendees.first()
