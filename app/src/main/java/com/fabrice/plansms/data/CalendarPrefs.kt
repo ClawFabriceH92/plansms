@@ -45,6 +45,33 @@ object CalendarPrefs {
         prefs(context).edit().putString(KEY_CONFIRM_MSG, message.trim()).apply()
     }
 
+    private const val KEY_ASK_SUBJECT = "ask_phone_subject"
+    private const val KEY_ASK_BODY = "ask_phone_body"
+
+    const val DEFAULT_ASK_SUBJECT = "Votre numéro de portable — rendez-vous du {{date}}"
+
+    const val DEFAULT_ASK_BODY =
+        "Bonjour,\n\n" +
+            "Nous avons rendez-vous {{jour}} {{date}} à {{heure}}. Afin de pouvoir vous " +
+            "envoyer les confirmations et informations pratiques par SMS, pourriez-vous " +
+            "me communiquer votre numéro de téléphone portable en réponse à cet email ?\n\n" +
+            "Cordialement."
+
+    fun askPhoneSubject(context: Context): String =
+        prefs(context).getString(KEY_ASK_SUBJECT, null)?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_ASK_SUBJECT
+
+    fun askPhoneBody(context: Context): String =
+        prefs(context).getString(KEY_ASK_BODY, null)?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_ASK_BODY
+
+    fun setAskPhoneTemplate(context: Context, subject: String, body: String) {
+        prefs(context).edit()
+            .putString(KEY_ASK_SUBJECT, subject.trim())
+            .putString(KEY_ASK_BODY, body.trim())
+            .apply()
+    }
+
     /** Rappel quotidien 15h (jours ouvrés) pour les RDV du lendemain. Activé par défaut. */
     fun reminderEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_REMINDER, true)
