@@ -311,14 +311,26 @@ private fun RdvCard(
                     Text("📅 ${r.event.calendarName}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 when {
-                    // Cas 1 : contact trouvé par email → fiable
+                    // Cas 1 : contact trouvé par email, ou numéro écrit dans l'événement
                     r.phone.isNotEmpty() -> {
                         Text(
-                            "👤 ${r.contactName.ifBlank { r.email }} · ${r.phone}",
+                            "👤 " + r.contactName
+                                .ifBlank { r.attendeeName }
+                                .ifBlank { r.email }
+                                .ifBlank { "Numéro de l'événement" } + " · ${r.phone}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Success
                         )
-                        Text(r.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (r.phoneFromEvent) {
+                            Text(
+                                "📎 Numéro repris de l'événement (titre / lieu / description)",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (r.email.isNotBlank()) {
+                            Text(r.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                     // Cas 2 : rapprochement déjà validé par toi
                     chosenContact != null -> {

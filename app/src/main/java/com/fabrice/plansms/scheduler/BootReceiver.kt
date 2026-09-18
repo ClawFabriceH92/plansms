@@ -72,5 +72,8 @@ class BootReceiver : BroadcastReceiver() {
 
         // Icône d'état (répondeur / relais actifs)
         com.fabrice.plansms.util.ActiveStatusNotifier.refresh(context)
+
+        // Demande automatique de numéro 48 h avant les RDV
+        AskPhoneAhead.schedule(context)
     }
 }
