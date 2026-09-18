@@ -50,6 +50,7 @@ import com.fabrice.plansms.data.TomorrowRdv
 import com.fabrice.plansms.ui.PlanSmsViewModel
 import com.fabrice.plansms.ui.theme.Danger
 import com.fabrice.plansms.ui.theme.Success
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -73,6 +74,7 @@ fun ConfirmRdvScreen(
     // RDV envoyés via un rapprochement VALIDÉ : eventId → (numéro, nom)
     var chosen by rememberSaveable { mutableStateOf(hashMapOf<Long, Pair<String, String>>()) }
     var dialogFor by remember { mutableStateOf<TomorrowRdv?>(null) }
+    var askPhoneFor by remember { mutableStateOf<TomorrowRdv?>(null) }
     var pendingAttach by remember { mutableStateOf<Pair<Long, String>?>(null) }  // (contactId, email)
 
     val writeContactsLauncher = rememberLauncherForActivityResult(
@@ -101,6 +103,11 @@ fun ConfirmRdvScreen(
     val targetLabel = if (state.tomorrowRdvTarget > 0)
         SimpleDateFormat("EEEE dd/MM", Locale.FRANCE).format(Date(state.tomorrowRdvTarget))
     else "demain"
+
+    // Demande du numéro par email (participant sans numéro connu)
+    askPhoneFor?.let { rdv ->
+        AskPhoneDialog(rdv = rdv, onDismiss = { askPhoneFor = null })
+    }
 
     // Dialogue de validation d'un rapprochement (jamais d'association silencieuse)
     dialogFor?.let { rdv ->
@@ -206,7 +213,8 @@ fun ConfirmRdvScreen(
                                         dialogFor = r   // toujours valider via le dialogue — jamais de coche directe
                                 }
                             },
-                            onOpenDialog = { dialogFor = r }
+                            onOpenDialog = { dialogFor = r },
+                            onAskPhone = { askPhoneFor = r }
                         )
                     }
                     if (state.tomorrowRdvNoEmail > 0) {
@@ -276,7 +284,8 @@ private fun RdvCard(
     chosenContact: Pair<String, String>?,
     enabled: Boolean,
     onToggle: () -> Unit,
-    onOpenDialog: () -> Unit
+    onOpenDialog: () -> Unit,
+    onAskPhone: () -> Unit
 ) {
     val hourFmt = SimpleDateFormat("HH:mm", Locale.FRANCE)
     val selectable = r.phone.isNotEmpty() || r.suggestions.isNotEmpty()
@@ -337,17 +346,25 @@ private fun RdvCard(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.secondary
                         )
-                        TextButton(onClick = onOpenDialog, enabled = enabled) {
-                            Text("Vérifier et valider…")
+                        Row {
+                            TextButton(onClick = onOpenDialog, enabled = enabled) {
+                                Text("Vérifier et valider…")
+                            }
+                            TextButton(onClick = onAskPhone, enabled = enabled) {
+                                Text("✉️ Demander le n°")
+                            }
                         }
                     }
-                    // Cas 4 : rien trouvé
+                    // Cas 4 : rien trouvé → on propose de demander le numéro par email
                     else -> {
                         Text(
-                            "⚠️ ${r.email} : aucun contact trouvé (ni par email, ni par nom). Ajoute ce contact avec son numéro pour l'inclure.",
+                            "⚠️ ${r.email} : aucun contact trouvé (ni par email, ni par nom).",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Danger
                         )
+                        TextButton(onClick = onAskPhone, enabled = enabled) {
+                            Text("✉️ Demander le numéro par email")
+                        }
                     }
                 }
             }
@@ -422,6 +439,150 @@ private fun AssociateDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Annuler") }
+        }
+    )
+}
+
+/**
+ * Demande du numéro de portable par email, quand le participant d'un RDV
+ * n'est pas dans les contacts. Modèle mémorisé (variables {{jour}}, {{date}},
+ * {{heure}}, {{nom}}, {{prenom}}), aperçu du rendu, deux envois possibles :
+ * direct via le compte SMTP de l'app, ou ouverture de l'app email pré-remplie.
+ */
+@Composable
+private fun AskPhoneDialog(rdv: TomorrowRdv, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var subject by remember {
+        mutableStateOf(com.fabrice.plansms.data.CalendarPrefs.askPhoneSubject(context))
+    }
+    var body by remember {
+        mutableStateOf(com.fabrice.plansms.data.CalendarPrefs.askPhoneBody(context))
+    }
+    var sending by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf("") }
+
+    val who = rdv.attendeeName.ifBlank { rdv.email }
+    fun resolved(text: String): String =
+        com.fabrice.plansms.logic.SmsRules.resolveTemplate(text, who, rdv.event.start)
+
+    fun logAsk(ok: Boolean, error: String) {
+        scope.launch {
+            try {
+                com.fabrice.plansms.data.AppDatabase.get(context).sendLogDao().insert(
+                    com.fabrice.plansms.data.SendLog(
+                        scheduledId = 0,
+                        phone = rdv.email,
+                        textPreview = "DEMANDE N° (email): " + resolved(subject).take(60),
+                        status = if (ok) "SENT" else "FAILED",
+                        error = error,
+                        sentAt = System.currentTimeMillis()
+                    )
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!sending) onDismiss() },
+        title = { Text("Demander le numéro par email") },
+        text = {
+            Column {
+                Text(
+                    "À : ${rdv.email}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = subject,
+                    onValueChange = { subject = it },
+                    label = { Text("Objet") },
+                    singleLine = true,
+                    enabled = !sending,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = { body = it },
+                    label = { Text("Message ({{jour}}, {{date}}, {{heure}}…)") },
+                    minLines = 4,
+                    enabled = !sending,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Aperçu : " + resolved(body).take(160),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        com.fabrice.plansms.data.CalendarPrefs.setAskPhoneTemplate(context, subject, body)
+                        try {
+                            context.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+                                    data = android.net.Uri.parse("mailto:" + android.net.Uri.encode(rdv.email))
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, resolved(subject))
+                                    putExtra(android.content.Intent.EXTRA_TEXT, resolved(body))
+                                }
+                            )
+                            onDismiss()
+                        } catch (_: Exception) {
+                            result = "Aucune application email sur ce téléphone."
+                        }
+                    },
+                    enabled = !sending,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Ouvrir dans l'app email (relecture avant envoi)") }
+                if (!com.fabrice.plansms.relay.RelayMailer.isConfigured(context)) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Envoi direct indisponible : configure le compte SMTP dans " +
+                            "Réglages → Stockage, ou passe par l'app email ci-dessus.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (result.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        result,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (result.startsWith("✅")) Success else Danger
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    com.fabrice.plansms.data.CalendarPrefs.setAskPhoneTemplate(context, subject, body)
+                    sending = true
+                    result = ""
+                    scope.launch {
+                        val error = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            com.fabrice.plansms.relay.RelayMailer.sendRaw(
+                                context, rdv.email, resolved(subject), resolved(body)
+                            )
+                        }
+                        sending = false
+                        logAsk(error == null, error ?: "")
+                        if (error == null) {
+                            result = "✅ Email envoyé à ${rdv.email}."
+                        } else {
+                            result = "Échec : $error"
+                        }
+                    }
+                },
+                enabled = !sending && subject.isNotBlank() && body.isNotBlank() &&
+                    com.fabrice.plansms.relay.RelayMailer.isConfigured(context)
+            ) { Text(if (sending) "Envoi…" else "Envoyer maintenant") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !sending) { Text("Fermer") }
         }
     )
 }
