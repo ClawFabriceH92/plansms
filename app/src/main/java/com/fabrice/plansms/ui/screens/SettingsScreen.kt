@@ -175,6 +175,38 @@ fun SettingsScreen(
                         com.fabrice.plansms.scheduler.RdvReminder.schedule(context)
                     })
                 }
+                Spacer(Modifier.height(10.dp))
+                var autoAsk by remember {
+                    mutableStateOf(com.fabrice.plansms.scheduler.AskPhoneAhead.enabled(context))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Demande automatique du numéro (48 h avant)",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Si le participant d'un RDV des 48 prochaines heures n'a aucun " +
+                                "numéro dans les contacts, il reçoit automatiquement l'email " +
+                                "« pourriez-vous me communiquer votre portable ? » (modèle de " +
+                                "l'écran RDV). Un seul email par RDV, jamais deux fois la même " +
+                                "adresse en 7 jours. Tracé dans Journal → Envois.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (!com.fabrice.plansms.relay.RelayMailer.isConfigured(context)) {
+                            Text(
+                                "⚠️ Compte SMTP non configuré (Réglages → Stockage) : rien ne partira.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    Switch(checked = autoAsk, onCheckedChange = {
+                        autoAsk = it
+                        com.fabrice.plansms.scheduler.AskPhoneAhead.setEnabled(context, it)
+                        if (it) com.fabrice.plansms.scheduler.AskPhoneAhead.schedule(context)
+                    })
+                }
             }
         }
 

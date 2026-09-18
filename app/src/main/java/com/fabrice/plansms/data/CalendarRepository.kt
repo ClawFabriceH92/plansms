@@ -306,6 +306,68 @@ object CalendarRepository {
         return TomorrowRdvResult(withEmail = withEmail, withoutEmailCount = withoutEmail, targetStart = start)
     }
 
+    /** RDV à venir dont le participant n'a AUCUN numéro connu dans les contacts. */
+    data class UnresolvedMeeting(
+        val eventId: Long,
+        val title: String,
+        val start: Long,
+        val email: String,
+        val attendeeName: String
+    )
+
+    /**
+     * RDV de la fenêtre [from, to) ayant un participant (email) mais aucun
+     * contact avec numéro — les candidats à une demande de numéro par email.
+     * Calendriers masqués exclus, email du propriétaire ignoré.
+     */
+    fun unresolvedMeetings(context: Context, from: Long, to: Long): List<UnresolvedMeeting> {
+        val cals = readCalendars(context)
+        val hidden = CalendarPrefs.hiddenIds(context)
+        val owners = cals.map { it.ownerAccount.lowercase() }.filter { it.isNotBlank() }.toSet()
+
+        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath(from.toString())
+            .appendPath(to.toString())
+            .build()
+        val projection = arrayOf(
+            CalendarContract.Instances._ID,
+            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.CALENDAR_ID
+        )
+        val result = mutableListOf<UnresolvedMeeting>()
+        val cursor = try {
+            context.contentResolver.query(
+                uri, projection, null, null, "${CalendarContract.Instances.BEGIN} ASC"
+            )
+        } catch (e: Exception) { null }
+        cursor?.use { c ->
+            while (c.moveToNext()) {
+                if (c.getLong(4) in hidden) continue
+                val begin = c.getLong(3)
+                if (begin < from || begin >= to) continue
+                val eventId = c.getLong(1)
+                val attendees = readAttendeeInfos(context, eventId)
+                    .filter { it.email.lowercase() !in owners }
+                if (attendees.isEmpty()) continue
+                // Un participant avec numéro suffit : le RDV est couvert
+                if (attendees.any { findContactPhone(context, it.email) != null }) continue
+                val first = attendees.first()
+                result.add(
+                    UnresolvedMeeting(
+                        eventId = eventId,
+                        title = c.getString(2) ?: "",
+                        start = begin,
+                        email = first.email,
+                        attendeeName = first.name
+                    )
+                )
+            }
+        }
+        return result
+    }
+
     /** Mapping : email du participant → (nom, numéro) du contact Android. */
     fun findContactPhone(context: Context, email: String): Pair<String, String>? {
         val emailCursor = try {
