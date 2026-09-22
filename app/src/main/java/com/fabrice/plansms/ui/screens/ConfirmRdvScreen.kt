@@ -224,7 +224,19 @@ fun ConfirmRdvScreen(
                                 }
                             },
                             onOpenDialog = { dialogFor = r },
-                            onAskPhone = { askPhoneFor = r }
+                            onAskPhone = { askPhoneFor = r },
+                            onEmailConfirm = {
+                                val who = r.attendeeName.ifBlank { r.email }
+                                com.fabrice.plansms.util.EmailDraft.open(
+                                    context,
+                                    r.email,
+                                    "Confirmation de notre rendez-vous du " +
+                                        SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE)
+                                            .format(Date(r.event.start)),
+                                    com.fabrice.plansms.logic.SmsRules
+                                        .resolveTemplate(text, who, r.event.start)
+                                )
+                            }
                         )
                     }
                     if (state.tomorrowRdvNoEmail > 0) {
@@ -296,7 +308,8 @@ private fun RdvCard(
     enabled: Boolean,
     onToggle: () -> Unit,
     onOpenDialog: () -> Unit,
-    onAskPhone: () -> Unit
+    onAskPhone: () -> Unit,
+    onEmailConfirm: () -> Unit
 ) {
     val hourFmt = SimpleDateFormat("HH:mm", Locale.FRANCE)
     val selectable = r.phone.isNotEmpty() || r.suggestions.isNotEmpty()
@@ -384,6 +397,9 @@ private fun RdvCard(
                                 Text("✉️ Demander le n°")
                             }
                         }
+                        TextButton(onClick = onEmailConfirm, enabled = enabled) {
+                            Text("📧 Confirmer par email (brouillon Outlook)")
+                        }
                     }
                     // Cas 4 : rien trouvé → on propose de demander le numéro par email
                     else -> {
@@ -394,6 +410,9 @@ private fun RdvCard(
                         )
                         TextButton(onClick = onAskPhone, enabled = enabled) {
                             Text("✉️ Demander le numéro par email")
+                        }
+                        TextButton(onClick = onEmailConfirm, enabled = enabled) {
+                            Text("📧 Confirmer par email (brouillon Outlook)")
                         }
                     }
                 }
@@ -551,22 +570,18 @@ private fun AskPhoneDialog(rdv: TomorrowRdv, onDismiss: () -> Unit) {
                 OutlinedButton(
                     onClick = {
                         com.fabrice.plansms.data.CalendarPrefs.setAskPhoneTemplate(context, subject, body)
-                        try {
-                            context.startActivity(
-                                android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
-                                    data = android.net.Uri.parse("mailto:" + android.net.Uri.encode(rdv.email))
-                                    putExtra(android.content.Intent.EXTRA_SUBJECT, resolved(subject))
-                                    putExtra(android.content.Intent.EXTRA_TEXT, resolved(body))
-                                }
+                        if (com.fabrice.plansms.util.EmailDraft.open(
+                                context, rdv.email, resolved(subject), resolved(body)
                             )
+                        ) {
                             onDismiss()
-                        } catch (_: Exception) {
+                        } else {
                             result = "Aucune application email sur ce téléphone."
                         }
                     },
                     enabled = !sending,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Ouvrir dans l'app email (relecture avant envoi)") }
+                ) { Text("Ouvrir le brouillon dans Outlook (relecture avant envoi)") }
                 if (!com.fabrice.plansms.relay.RelayMailer.isConfigured(context)) {
                     Spacer(Modifier.height(4.dp))
                     Text(
