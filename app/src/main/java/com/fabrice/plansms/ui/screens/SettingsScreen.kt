@@ -207,6 +207,32 @@ fun SettingsScreen(
                         if (it) com.fabrice.plansms.scheduler.AskPhoneAhead.schedule(context)
                     })
                 }
+                Spacer(Modifier.height(10.dp))
+                var autoConfirm by remember {
+                    mutableStateOf(com.fabrice.plansms.scheduler.AutoConfirm.enabled(context))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Envoi automatique des confirmations (15h)",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "À 15h la veille (jours ouvrés), les RDV dont le numéro est écrit " +
+                                "dans l'événement (titre, lieu, description) reçoivent le SMS de " +
+                                "confirmation SANS validation — c'est toi qui as saisi ce numéro. " +
+                                "Les RDV liés à un contact ou à un rapprochement restent en " +
+                                "validation manuelle dans l'écran RDV. Un seul envoi par RDV, " +
+                                "jamais le week-end, tracé dans Journal → Envois.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Switch(checked = autoConfirm, onCheckedChange = {
+                        autoConfirm = it
+                        com.fabrice.plansms.scheduler.AutoConfirm.setEnabled(context, it)
+                        com.fabrice.plansms.scheduler.RdvReminder.schedule(context)
+                    })
+                }
             }
         }
 

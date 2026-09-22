@@ -30,7 +30,8 @@ object RdvReminder {
     fun schedule(context: Context) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = pendingIntent(context)
-        if (!CalendarPrefs.reminderEnabled(context)) {
+        // L'alarme de 15h sert au rappel ET à l'envoi automatique des confirmations
+        if (!CalendarPrefs.reminderEnabled(context) && !AutoConfirm.enabled(context)) {
             am.cancel(pi)
             return
         }
@@ -70,7 +71,7 @@ object RdvReminder {
         return c.timeInMillis
     }
 
-    fun showNotification(context: Context, count: Int, targetStart: Long) {
+    fun showNotification(context: Context, count: Int, targetStart: Long, autoSent: Int = 0) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Rappel RDV du lendemain", NotificationManager.IMPORTANCE_DEFAULT)
@@ -84,10 +85,19 @@ object RdvReminder {
             context, REQUEST_CODE + 1, open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val remaining = count - autoSent
+        val title = if (autoSent > 0) "✅ $autoSent confirmation(s) SMS envoyée(s)"
+        else "$count RDV $dayLabel"
+        val text = when {
+            autoSent > 0 && remaining > 0 ->
+                "RDV de $dayLabel · $remaining autre(s) à confirmer dans l'app."
+            autoSent > 0 -> "RDV de $dayLabel : tout est confirmé."
+            else -> "Touche pour envoyer les SMS de confirmation."
+        }
         val notif = android.app.Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_email)
-            .setContentTitle("$count RDV $dayLabel")
-            .setContentText("Touche pour envoyer les SMS de confirmation.")
+            .setContentTitle(title)
+            .setContentText(text)
             .setContentIntent(contentIntent)
             .setAutoCancel(true)
             .build()
@@ -107,11 +117,22 @@ class RdvReminderReceiver : BroadcastReceiver() {
             try {
                 val day = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
                 val weekend = day == Calendar.SATURDAY || day == Calendar.SUNDAY
-                if (!weekend && CalendarPrefs.reminderEnabled(context)) {
+                if (!weekend && (CalendarPrefs.reminderEnabled(context) || AutoConfirm.enabled(context))) {
                     val result = CalendarRepository.tomorrowMeetings(context)
                     AppLogger.i("RdvReminder", "15h : ${result.withEmail.size} RDV avec participant au prochain jour ouvré")
-                    if (result.withEmail.isNotEmpty()) {
-                        RdvReminder.showNotification(context, result.withEmail.size, result.targetStart)
+
+                    // Envoi automatique : uniquement les RDV dont le numéro est
+                    // écrit dans l'événement (jamais un rapprochement).
+                    val autoSent = kotlinx.coroutines.runBlocking {
+                        AutoConfirm.run(context, result.withEmail)
+                    }
+
+                    if (result.withEmail.isNotEmpty() &&
+                        (CalendarPrefs.reminderEnabled(context) || autoSent > 0)
+                    ) {
+                        RdvReminder.showNotification(
+                            context, result.withEmail.size, result.targetStart, autoSent
+                        )
                     }
                 }
             } catch (e: Exception) {
