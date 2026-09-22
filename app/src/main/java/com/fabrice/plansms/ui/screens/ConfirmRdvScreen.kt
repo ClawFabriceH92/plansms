@@ -183,6 +183,15 @@ fun ConfirmRdvScreen(
                 OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("← Retour") }
             }
             else -> {
+                // RDV déjà confirmés automatiquement à 15h : décochés d'office
+                val autoSentIds = remember(rdvList) {
+                    rdvList.filter {
+                        com.fabrice.plansms.scheduler.AutoConfirm.wasSent(context, it.event.id, it.event.start)
+                    }.map { it.event.id }.toSet()
+                }
+                LaunchedEffect(autoSentIds) {
+                    if (autoSentIds.isNotEmpty()) excluded = excluded + autoSentIds
+                }
                 val recipients = rdvList.mapNotNull { r ->
                     when {
                         r.phone.isNotEmpty() && r.event.id !in excluded ->
@@ -202,6 +211,7 @@ fun ConfirmRdvScreen(
                             r = r,
                             checked = if (r.phone.isNotEmpty()) r.event.id !in excluded else r.event.id in chosen,
                             chosenContact = chosen[r.event.id],
+                            autoSent = r.event.id in autoSentIds,
                             enabled = !state.bulkSending,
                             onToggle = {
                                 when {
@@ -282,6 +292,7 @@ private fun RdvCard(
     r: TomorrowRdv,
     checked: Boolean,
     chosenContact: Pair<String, String>?,
+    autoSent: Boolean,
     enabled: Boolean,
     onToggle: () -> Unit,
     onOpenDialog: () -> Unit,
@@ -309,6 +320,13 @@ private fun RdvCard(
                 )
                 if (r.event.calendarName.isNotBlank()) {
                     Text("📅 ${r.event.calendarName}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (autoSent) {
+                    Text(
+                        "✅ Confirmation déjà envoyée automatiquement (15h) — recoche pour renvoyer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Success
+                    )
                 }
                 when {
                     // Cas 1 : contact trouvé par email, ou numéro écrit dans l'événement
