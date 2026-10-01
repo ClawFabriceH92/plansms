@@ -81,6 +81,15 @@ object CallResponder {
 
     /** Appelé par le receiver téléphonie quand un appel entrant se termine. */
     suspend fun onCallEnded(context: Context, number: String, answered: Boolean) {
+        // Préfixe bloqué (démarchage) : même si l'appel a sonné faute de rôle
+        // de filtrage, on ne répond JAMAIS par SMS à ces numéros.
+        if (com.fabrice.plansms.screening.CallBlocker.shouldBlock(
+                number, com.fabrice.plansms.screening.CallBlocker.prefixes(context)
+            )
+        ) {
+            AppLogger.i("CallResponder", "Pas de répondeur SMS : préfixe bloqué ($number)")
+            return
+        }
         val now = System.currentTimeMillis()
         val key = CallLogRepository.matchKey(number)
         if (!shouldReply(enabled(context), mode(context), answered, number, lastSentAt(context, key), now)) {
