@@ -490,6 +490,99 @@ fun SettingsScreen(
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(14.dp)) {
+                Text("Blocage d'appels (démarchage)", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                var blockEnabled by remember {
+                    mutableStateOf(com.fabrice.plansms.screening.CallBlocker.enabled(context))
+                }
+                var blockRole by remember {
+                    mutableStateOf(com.fabrice.plansms.screening.CallBlocker.hasRole(context))
+                }
+                var blockPrefixes by remember {
+                    mutableStateOf(com.fabrice.plansms.screening.CallBlocker.prefixesRaw(context))
+                }
+                val roleLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult()
+                ) { blockRole = com.fabrice.plansms.screening.CallBlocker.hasRole(context) }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Rejeter avant la sonnerie les numéros dont le préfixe est listé " +
+                                "ci-dessous. Le 0162 (pré-rempli) est un préfixe que l'ARCEP " +
+                                "réserve aux plateformes de démarchage : aucun client n'appelle " +
+                                "depuis ce préfixe. Chaque blocage est tracé dans Journal → Envois.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Switch(checked = blockEnabled, onCheckedChange = {
+                        blockEnabled = it
+                        com.fabrice.plansms.screening.CallBlocker.setEnabled(context, it)
+                    })
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (blockRole)
+                        "✅ PlanSMS est l'application de filtrage d'appels — le blocage est opérationnel."
+                    else
+                        "⚠️ Android exige que PlanSMS soit l'application de filtrage d'appels " +
+                            "(rôle « identification et anti-spam ») pour pouvoir rejeter un appel.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (blockRole) Success else MaterialTheme.colorScheme.error
+                )
+                if (!blockRole) {
+                    Spacer(Modifier.height(6.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                val rm = context.getSystemService(android.app.role.RoleManager::class.java)
+                                if (rm != null) {
+                                    roleLauncher.launch(
+                                        rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_CALL_SCREENING)
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                AppLogger.e("Settings", "Demande du rôle de filtrage impossible", e)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Devenir l'app de filtrage d'appels") }
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = blockPrefixes,
+                    onValueChange = {
+                        blockPrefixes = it
+                        com.fabrice.plansms.screening.CallBlocker.setPrefixesRaw(context, it)
+                    },
+                    label = { Text("Préfixes bloqués (un par ligne : 0162, +33162…)") },
+                    minLines = 1,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = {
+                        val current = com.fabrice.plansms.screening.CallBlocker.prefixes(context)
+                        val merged = (current + com.fabrice.plansms.screening.CallBlocker.ARCEP_PREFIXES)
+                            .distinct().joinToString("\n")
+                        blockPrefixes = merged
+                        com.fabrice.plansms.screening.CallBlocker.setPrefixesRaw(context, merged)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Ajouter les 12 préfixes démarchage officiels (ARCEP)") }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Un préfixe doit faire au moins 3 chiffres — impossible de bloquer " +
+                        "tous les 06 par erreur. Le répondeur SMS ignore aussi ces numéros.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(14.dp)) {
                 Text("Messages RCS / chat", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(4.dp))
                 Text(

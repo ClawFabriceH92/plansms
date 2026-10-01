@@ -105,6 +105,16 @@
             </intent-filter>
         </service>
 
+        <!-- Filtrage d'appels : rejet avant sonnerie des préfixes bloqués (rôle ROLE_CALL_SCREENING) -->
+        <service
+            android:name=".screening.ScreeningService"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
         <!-- Tuile « Répondeur SMS » dans les réglages rapides -->
         <service
             android:name=".scheduler.ResponderTileService"
