@@ -47,4 +47,22 @@ class CallBlockerTest {
         assertTrue(CallBlocker.shouldBlock("+33948123456", arcep))
         assertFalse(CallBlocker.shouldBlock("0612345678", arcep))
     }
+
+    /** Le blocage vaut aussi pour les SMS : mêmes préfixes, même normalisation. */
+    @Test
+    fun `prefixe de 4 chiffres bloque aussi les SMS`() {
+        val p = listOf("0612")
+        assertTrue(CallBlocker.shouldBlock("0612345678", p))
+        assertTrue(CallBlocker.shouldBlock("+33 6 12 34 56 78", p))
+        assertTrue(CallBlocker.shouldBlock("0033612345678", p))
+        assertFalse(CallBlocker.shouldBlock("0613345678", p))   // 0613 : non bloqué
+        assertFalse(CallBlocker.shouldBlock("3361234567", p))   // pas de 0, format court
+    }
+
+    /** Un expéditeur alphanumérique (nom d'expéditeur SMS) n'est jamais bloqué. */
+    @Test
+    fun `expediteur alphanumerique non bloque`() {
+        assertFalse(CallBlocker.shouldBlock("DARTY", listOf("0162")))
+        assertFalse(CallBlocker.shouldBlock("INFO+", listOf("0162")))
+    }
 }

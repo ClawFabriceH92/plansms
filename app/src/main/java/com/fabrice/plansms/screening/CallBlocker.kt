@@ -23,8 +23,13 @@ object CallBlocker {
     private const val PREFS = "plansms_call_blocker"
     private const val K_ENABLED = "enabled"
     private const val K_PREFIXES = "prefixes"
+    private const val K_SMS_ENABLED = "block_sms"
 
     const val DEFAULT_PREFIXES = "0162"
+
+    /** Nature du blocage, pour distinguer les traces du journal. */
+    const val KIND_CALL = "APPEL"
+    const val KIND_SMS = "SMS"
 
     /** Préfixes réservés au démarchage téléphonique (ARCEP, métropole, 2023). */
     val ARCEP_PREFIXES = listOf(
@@ -47,6 +52,21 @@ object CallBlocker {
     fun setPrefixesRaw(context: Context, raw: String) {
         prefs(context).edit().putString(K_PREFIXES, raw.trim()).apply()
     }
+
+    /**
+     * Le même blocage s'applique-t-il aussi aux SMS entrants ?
+     * (interrupteur séparé : on peut vouloir rejeter les appels de démarchage
+     * tout en continuant à recevoir leurs SMS de désinscription.)
+     */
+    fun smsEnabled(context: Context): Boolean = prefs(context).getBoolean(K_SMS_ENABLED, true)
+
+    fun setSmsEnabled(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(K_SMS_ENABLED, on).apply()
+    }
+
+    /** Vrai si un SMS venant de ce numéro doit être bloqué. */
+    fun shouldBlockSms(context: Context, number: String): Boolean =
+        enabled(context) && smsEnabled(context) && shouldBlock(number, prefixes(context))
 
     fun prefixes(context: Context): List<String> =
         prefixesRaw(context).split('\n', ',', ';')
@@ -77,15 +97,37 @@ object CallBlocker {
         }
     }
 
-    /** Trace l'appel bloqué dans Journal → Envois. */
-    suspend fun logBlocked(context: Context, number: String) {
+    /**
+     * Trace un blocage dans Journal → Envois.
+     * Un SMS bloqué arrive DEUX fois (diffusion SMS_RECEIVED puis notification
+     * de l'application de messagerie) : l'anti-doublon évite la trace en double.
+     */
+    suspend fun logBlocked(
+        context: Context,
+        number: String,
+        kind: String = KIND_CALL,
+        preview: String = ""
+    ) {
+        val now = System.currentTimeMillis()
+        val key = kind + "|" + CallLogRepository.matchKey(number)
+        synchronized(recentLogs) {
+            val last = recentLogs[key]
+            if (last != null && now - last < DEDUP_WINDOW) return
+            recentLogs[key] = now
+            if (recentLogs.size > 200) recentLogs.clear()
+        }
         try {
+            val detail = preview.trim().take(60)
             AppDatabase.get(context).sendLogDao().insert(
                 SendLog(
                     scheduledId = 0,
                     phone = number,
-                    textPreview = "APPEL BLOQUÉ — préfixe de démarchage",
-                    status = "BLOCKED",
+                    textPreview = when (kind) {
+                        KIND_SMS -> "SMS BLOQUÉ — préfixe bloqué" +
+                            if (detail.isNotEmpty()) " : $detail" else ""
+                        else -> "APPEL BLOQUÉ — préfixe de démarchage"
+                    },
+                    status = if (kind == KIND_SMS) "BLOCKED_SMS" else "BLOCKED",
                     sentAt = System.currentTimeMillis()
                 )
             )
@@ -93,4 +135,8 @@ object CallBlocker {
             AppLogger.e("CallBlocker", "Journalisation du blocage impossible", e)
         }
     }
+
+    /** Clés récemment tracées, pour ne pas journaliser deux fois le même message. */
+    private val recentLogs = HashMap<String, Long>()
+    private const val DEDUP_WINDOW = 5 * 60 * 1000L
 }

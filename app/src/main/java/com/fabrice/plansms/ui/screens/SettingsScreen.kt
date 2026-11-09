@@ -490,10 +490,13 @@ fun SettingsScreen(
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(14.dp)) {
-                Text("Blocage d'appels (démarchage)", style = MaterialTheme.typography.titleLarge)
+                Text("Blocage par préfixe (appels + SMS)", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(4.dp))
                 var blockEnabled by remember {
                     mutableStateOf(com.fabrice.plansms.screening.CallBlocker.enabled(context))
+                }
+                var blockSms by remember {
+                    mutableStateOf(com.fabrice.plansms.screening.CallBlocker.smsEnabled(context))
                 }
                 var blockRole by remember {
                     mutableStateOf(com.fabrice.plansms.screening.CallBlocker.hasRole(context))
@@ -508,16 +511,34 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Rejeter avant la sonnerie les numéros dont le préfixe est listé " +
-                                "ci-dessous. Le 0162 (pré-rempli) est un préfixe que l'ARCEP " +
-                                "réserve aux plateformes de démarchage : aucun client n'appelle " +
-                                "depuis ce préfixe. Chaque blocage est tracé dans Journal → Envois.",
+                            "Rejeter les appels et masquer les SMS des numéros dont les 3-4 " +
+                                "premiers chiffres figurent ci-dessous. Le 0162 (pré-rempli) est " +
+                                "un préfixe que l'ARCEP réserve aux plateformes de démarchage : " +
+                                "aucun client n'appelle depuis ce préfixe. Chaque blocage est " +
+                                "tracé dans Journal → Envois.",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Switch(checked = blockEnabled, onCheckedChange = {
                         blockEnabled = it
                         com.fabrice.plansms.screening.CallBlocker.setEnabled(context, it)
+                    })
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Bloquer aussi les SMS", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Le SMS n'est ni relayé ni auto-répondu, et sa notification est " +
+                                "retirée de la barre d'état (accès aux notifications requis). Il " +
+                                "reste dans ton application de messagerie : seul le rôle d'app SMS " +
+                                "par défaut permettrait de l'y supprimer.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(checked = blockSms, onCheckedChange = {
+                        blockSms = it
+                        com.fabrice.plansms.screening.CallBlocker.setSmsEnabled(context, it)
                     })
                 }
                 Spacer(Modifier.height(8.dp))
@@ -573,8 +594,9 @@ fun SettingsScreen(
                 ) { Text("Ajouter les 12 préfixes démarchage officiels (ARCEP)") }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Un préfixe doit faire au moins 3 chiffres — impossible de bloquer " +
-                        "tous les 06 par erreur. Le répondeur SMS ignore aussi ces numéros.",
+                    "Un préfixe doit faire au moins 3 chiffres, 4 recommandés : « 0162 » bloque " +
+                        "01 62 xx xx xx, « +33 1 62 » aussi. Impossible de bloquer tous les 06 " +
+                        "par erreur. Ces numéros ne déclenchent ni relais, ni auto-réponse.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

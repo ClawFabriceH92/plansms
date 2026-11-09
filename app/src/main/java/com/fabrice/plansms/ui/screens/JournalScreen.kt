@@ -707,6 +707,8 @@ private fun LogCard(log: SendLog) {
     val (label, color) = when (log.status) {
         "SENT" -> "Envoyé" to Success
         "RATTRAPAGE" -> "Rattrapage" to MaterialTheme.colorScheme.secondary
+        "BLOCKED" -> "Appel bloqué" to MaterialTheme.colorScheme.tertiary
+        "BLOCKED_SMS" -> "SMS bloqué" to MaterialTheme.colorScheme.tertiary
         else -> "Échec" to Danger
     }
     Card(

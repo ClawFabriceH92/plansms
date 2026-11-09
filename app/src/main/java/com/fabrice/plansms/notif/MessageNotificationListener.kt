@@ -10,6 +10,7 @@ import com.fabrice.plansms.data.AppDatabase
 import com.fabrice.plansms.data.CallLogRepository
 import com.fabrice.plansms.data.ContactsHelper
 import com.fabrice.plansms.data.InboundMessage
+import com.fabrice.plansms.screening.CallBlocker
 import com.fabrice.plansms.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,10 +49,14 @@ class MessageNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (!NotifPrefs.captureEnabled(this)) return
         if (sbn.packageName !in MESSAGING_PACKAGES) return
         // Les résumés de groupe n'ont ni expéditeur ni contenu exploitable
         if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+
+        // Deux usages indépendants : la capture (RCS/journal) et le blocage par préfixe.
+        val captureEnabled = NotifPrefs.captureEnabled(this)
+        val blockSms = CallBlocker.enabled(this) && CallBlocker.smsEnabled(this)
+        if (!captureEnabled && !blockSms) return
 
         val extras = sbn.notification.extras
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
@@ -69,6 +74,24 @@ class MessageNotificationListener : NotificationListenerService() {
                 } else {
                     ContactsHelper.phoneForDisplayName(appContext, title)
                 }
+
+                // Blocage par préfixe : la notification disparaît de la barre d'état et
+                // le message n'est ni relayé, ni capté. Le SMS reste dans l'application
+                // de messagerie (PlanSMS ne peut pas l'y supprimer sans en être
+                // l'application SMS par défaut). Trace dans Journal → Envois.
+                if (blockSms && CallBlocker.shouldBlock(number ?: title, CallBlocker.prefixes(appContext))) {
+                    val shown = number ?: title
+                    try {
+                        cancelNotification(sbn.key)
+                    } catch (e: Exception) {
+                        AppLogger.w("NotifListener", "Notification non retirée : ${e.message}")
+                    }
+                    AppLogger.i("NotifListener", "Message masqué (préfixe bloqué) de $shown")
+                    CallBlocker.logBlocked(appContext, shown, CallBlocker.KIND_SMS, text)
+                    return@launch
+                }
+
+                if (!captureEnabled) return@launch
 
                 // Relais SMS : un RCS n'existe QUE côté notifications — c'est ici
                 // qu'il part. Le dédoublonnage écarte les vrais SMS déjà relayés.

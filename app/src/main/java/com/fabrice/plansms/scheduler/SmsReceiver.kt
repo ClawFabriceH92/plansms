@@ -39,6 +39,27 @@ class SmsReceiver : BroadcastReceiver() {
 
         val scope = CoroutineScope(Dispatchers.IO)
 
+        // Blocage par préfixe : le SMS n'est ni relayé, ni auto-répondu ; il est
+        // seulement tracé dans Journal → Envois. La notification de l'application
+        // de messagerie est masquée par MessageNotificationListener.
+        if (com.fabrice.plansms.screening.CallBlocker.shouldBlockSms(context, sender)) {
+            AppLogger.i("SmsReceiver", "SMS bloqué (préfixe) de $sender")
+            val pending = goAsync()
+            scope.launch {
+                try {
+                    com.fabrice.plansms.screening.CallBlocker.logBlocked(
+                        context, sender,
+                        com.fabrice.plansms.screening.CallBlocker.KIND_SMS, body
+                    )
+                } catch (e: Exception) {
+                    AppLogger.e("SmsReceiver", "Trace du blocage impossible", e)
+                } finally {
+                    pending.finish()
+                }
+            }
+            return
+        }
+
         // Relais SMS : transfert vers les destinataires configurés (indépendant
         // de l'auto-réponse, qui a ses propres règles).
         val pending = goAsync()
